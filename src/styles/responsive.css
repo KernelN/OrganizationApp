@@ -1,0 +1,21 @@
+/* Responsive Navigation and Grid Breakpoints */
+
+/* Desktop view: sidebar present */
+@media (min-width: 768px) {
+  .mobile-only {
+    display: none !important;
+  }
+  .desktop-only {
+    display: flex !important;
+  }
+}
+
+/* Mobile view: bottom nav bar active */
+@media (max-width: 767px) {
+  .mobile-only {
+    display: flex !important;
+  }
+  .desktop-only {
+    display: none !important;
+  }
+}
