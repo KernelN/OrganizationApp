@@ -1,6 +1,7 @@
 import { IndexedDBAdapter } from '../data/idb-adapter.js';
 import { eventBus } from './event-bus.js';
 import { applyAccentColor } from '../utils/color-utils.js';
+import { scheduleState } from './schedule-state.js';
 
 export class AppState {
   constructor() {
@@ -11,6 +12,8 @@ export class AppState {
     this.settings = null;
     this.listeners = new Set();
     this.initialized = false;
+    this.worker = null;
+    this.recomputeTimer = null;
   }
 
   subscribe(listener) {
@@ -36,12 +39,61 @@ export class AppState {
         applyAccentColor(this.settings.accent_color);
       }
 
+      this.initWorker();
+
       this.initialized = true;
       this.notify();
       eventBus.emit('app:ready', { initialized: true });
+
+      // Trigger initial scheduling pass
+      this.requestScheduleRecompute(0);
     } catch (err) {
       console.error('Failed to initialize AppState:', err);
     }
+  }
+
+  initWorker() {
+    try {
+      this.worker = new Worker(new URL('../engine/cronograma.worker.js', import.meta.url), {
+        type: 'module'
+      });
+
+      this.worker.onmessage = (e) => {
+        const { type, payload } = e.data || {};
+        if (type === 'SCHEDULE_UPDATED') {
+          scheduleState.setSchedule(payload);
+          eventBus.emit('schedule:updated', payload);
+          this.notify();
+        }
+      };
+    } catch (err) {
+      console.warn('Worker initialization failed (will fallback to main thread if needed):', err);
+    }
+  }
+
+  /**
+   * Request schedule recomputation in Web Worker with 150ms debouncing.
+   * @param {number} delayMs default 150ms
+   */
+  requestScheduleRecompute(delayMs = 150) {
+    if (this.recomputeTimer) {
+      clearTimeout(this.recomputeTimer);
+    }
+
+    this.recomputeTimer = setTimeout(() => {
+      if (this.worker) {
+        this.worker.postMessage({
+          type: 'RECOMPUTE',
+          payload: {
+            tasks: this.tasks,
+            tags: this.tags,
+            dependencies: this.dependencies,
+            settings: this.settings,
+            now: new Date().toISOString()
+          }
+        });
+      }
+    }, delayMs);
   }
 
   // --- Task Mutations ---
@@ -50,6 +102,7 @@ export class AppState {
     this.tasks = [...this.tasks, newTask];
     this.notify();
     eventBus.emit('task:created', newTask);
+    this.requestScheduleRecompute();
     return newTask;
   }
 
@@ -58,6 +111,7 @@ export class AppState {
     this.tasks = this.tasks.map(t => (t.id === id ? updated : t));
     this.notify();
     eventBus.emit('task:updated', updated);
+    this.requestScheduleRecompute();
     return updated;
   }
 
@@ -67,6 +121,7 @@ export class AppState {
     this.dependencies = this.dependencies.filter(d => d.task_id !== id && d.depends_on_id !== id);
     this.notify();
     eventBus.emit('task:deleted', { id });
+    this.requestScheduleRecompute();
   }
 
   // --- Tag Mutations ---
@@ -75,6 +130,7 @@ export class AppState {
     this.tags = [...this.tags, newTag];
     this.notify();
     eventBus.emit('tag:created', newTag);
+    this.requestScheduleRecompute();
     return newTag;
   }
 
@@ -83,6 +139,7 @@ export class AppState {
     this.tags = this.tags.map(t => (t.id === id ? updated : t));
     this.notify();
     eventBus.emit('tag:updated', updated);
+    this.requestScheduleRecompute();
     return updated;
   }
 
@@ -91,6 +148,7 @@ export class AppState {
     this.tags = this.tags.filter(t => t.id !== id);
     this.notify();
     eventBus.emit('tag:deleted', { id });
+    this.requestScheduleRecompute();
   }
 
   // --- Dependency Mutations ---
@@ -99,6 +157,7 @@ export class AppState {
     this.dependencies = [...this.dependencies, newDep];
     this.notify();
     eventBus.emit('dependency:created', newDep);
+    this.requestScheduleRecompute();
     return newDep;
   }
 
@@ -107,6 +166,7 @@ export class AppState {
     this.dependencies = this.dependencies.filter(d => d.id !== id);
     this.notify();
     eventBus.emit('dependency:deleted', { id });
+    this.requestScheduleRecompute();
   }
 
   // --- Settings Mutations ---
@@ -118,6 +178,7 @@ export class AppState {
     }
     this.notify();
     eventBus.emit('settings:updated', updated);
+    this.requestScheduleRecompute();
     return updated;
   }
 }
