@@ -1,7 +1,10 @@
 import { LitElement, html, css } from 'lit';
 import { appState } from './state/app-state.js';
+import './components/calendar/calendar-view.js';
 import './components/tasks/task-list-view.js';
 import './components/tags/tag-list-view.js';
+import './components/history/history-view.js';
+import './components/settings/settings-view.js';
 
 export class AppShell extends LitElement {
   static properties = {
@@ -207,21 +210,12 @@ export class AppShell extends LitElement {
       case 'tags':
         return this.renderPage('Tags', html`<tag-list-view></tag-list-view>`);
       case 'history':
-        return this.renderPage(
-          'History',
-          html`<div class="card-elevated" style="padding: 24px;"><h2>📜 History View</h2><p style="color: var(--color-text-secondary); margin-top: 8px;">Completed tasks, tag breakdown, and historical logs coming in Phase 4.</p></div>`
-        );
+        return this.renderPage('History', html`<history-view></history-view>`);
       case 'settings':
-        return this.renderPage(
-          'Settings',
-          html`<div class="card-elevated" style="padding: 24px;"><h2>⚙️ Settings View</h2><p style="color: var(--color-text-secondary); margin-top: 8px;">Work windows, break hours, theme customization, and GitHub sync settings coming in Phase 5.</p></div>`
-        );
+        return this.renderPage('Settings', html`<settings-view></settings-view>`);
       case 'calendar':
       default:
-        return this.renderPage(
-          'Calendar',
-          html`<div class="card-elevated" style="padding: 24px;"><h2>📅 Calendar View</h2><p style="color: var(--color-text-secondary); margin-top: 8px;">Interactive timeline, day grid, and slot manager coming in Phase 4.</p></div>`
-        );
+        return this.renderPage('Calendar', html`<calendar-view></calendar-view>`);
     }
   }
 

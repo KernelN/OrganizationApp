@@ -1,7 +1,9 @@
 /**
  * Time slot grid generation and slot allocation engine.
  */
-import { getDayOfWeekString } from '../utils/date-utils.js';
+import { getDayOfWeekString, formatLocalDate } from '../utils/date-utils.js';
+
+const DEFAULT_DAY_WORK_WINDOW = [{ start: '08:00', end: '20:00' }];
 
 /**
  * Generate discrete time slots between `now` and `horizonEnd`.
@@ -25,12 +27,16 @@ export function generateSlotGrid(now, horizonEnd, workWindows, breakWindows, slo
     const slotStart = new Date(curr);
     const slotEnd = new Date(curr.getTime() + msPerSlot);
     const dayStr = getDayOfWeekString(slotStart);
-    const dateStr = slotStart.toISOString().split('T')[0];
+    const dateStr = formatLocalDate(slotStart);
 
     const timeHHMM = `${String(slotStart.getHours()).padStart(2, '0')}:${String(slotStart.getMinutes()).padStart(2, '0')}`;
 
-    // Check if within work window
-    const dayWork = workWindows?.[dayStr] || [];
+    // Get work windows for day, falling back to default 08:00-20:00 if not configured
+    let dayWork = workWindows?.[dayStr];
+    if (!dayWork || dayWork.length === 0) {
+      dayWork = DEFAULT_DAY_WORK_WINDOW;
+    }
+
     const isWithinWorkWindow = dayWork.some(w => timeHHMM >= w.start && timeHHMM < w.end);
 
     if (isWithinWorkWindow) {

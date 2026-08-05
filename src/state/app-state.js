@@ -2,6 +2,7 @@ import { IndexedDBAdapter } from '../data/idb-adapter.js';
 import { eventBus } from './event-bus.js';
 import { applyAccentColor } from '../utils/color-utils.js';
 import { scheduleState } from './schedule-state.js';
+import { computeSchedule } from '../engine/scheduler.js';
 
 export class AppState {
   constructor() {
@@ -45,7 +46,7 @@ export class AppState {
       this.notify();
       eventBus.emit('app:ready', { initialized: true });
 
-      // Trigger initial scheduling pass
+      // Trigger initial scheduling pass immediately
       this.requestScheduleRecompute(0);
     } catch (err) {
       console.error('Failed to initialize AppState:', err);
@@ -66,13 +67,20 @@ export class AppState {
           this.notify();
         }
       };
+
+      this.worker.onerror = (err) => {
+        console.warn('[Worker Error] Fallback to main-thread scheduler:', err);
+        this.worker = null;
+        this.requestScheduleRecompute(0);
+      };
     } catch (err) {
-      console.warn('Worker initialization failed (will fallback to main thread if needed):', err);
+      console.warn('Worker initialization failed (using main thread scheduler):', err);
+      this.worker = null;
     }
   }
 
   /**
-   * Request schedule recomputation in Web Worker with 150ms debouncing.
+   * Request schedule recomputation in Web Worker (or main thread fallback) with 150ms debouncing.
    * @param {number} delayMs default 150ms
    */
   requestScheduleRecompute(delayMs = 150) {
@@ -92,6 +100,22 @@ export class AppState {
             now: new Date().toISOString()
           }
         });
+      } else {
+        // Synchronous main-thread scheduler fallback
+        try {
+          const schedule = computeSchedule(
+            this.tasks,
+            this.tags,
+            this.dependencies,
+            this.settings,
+            new Date()
+          );
+          scheduleState.setSchedule(schedule);
+          eventBus.emit('schedule:updated', schedule);
+          this.notify();
+        } catch (err) {
+          console.error('[Main Thread Scheduler Error]:', err);
+        }
       }
     }, delayMs);
   }

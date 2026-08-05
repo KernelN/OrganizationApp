@@ -24,6 +24,20 @@ export function getDayOfWeekString(date) {
 }
 
 /**
+ * Format a Date object to local YYYY-MM-DD string (in local timezone)
+ * @param {Date|string} dateInput 
+ * @returns {string} "YYYY-MM-DD"
+ */
+export function formatLocalDate(dateInput) {
+  const d = new Date(dateInput);
+  if (isNaN(d.getTime())) return '';
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+/**
  * Format a Date object to ISO string
  * @param {Date} date 
  * @returns {string} ISO 8601 string
