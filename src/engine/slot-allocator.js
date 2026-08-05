@@ -116,7 +116,8 @@ export function reserveLockedTaskSlots(lockedTasks, slotGrid) {
  * @returns {{ allocated: Array, isComplete: boolean }}
  */
 export function allocateSlotsForTask(task, candidateSlots, slotGranularityMinutes = 15) {
-  const slotsNeeded = Math.ceil(task.duration_minutes / slotGranularityMinutes);
+  const durationMinutes = task.duration_hours != null ? task.duration_hours * 60 : (task.duration_minutes || 30);
+  const slotsNeeded = Math.ceil(durationMinutes / slotGranularityMinutes);
 
   if (task.splittable) {
     // Greedily pick first N available slots

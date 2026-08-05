@@ -84,12 +84,16 @@ export class TagForm extends LitElement {
     this.formData = this.getInitialData();
   }
 
-  updated(changedProperties) {
-    if (changedProperties.has('tag')) {
+  willUpdate(changedProperties) {
+    if (changedProperties.has('open') && this.open) {
       if (this.tag) {
         this.formData = { ...this.tag };
       } else {
         this.formData = this.getInitialData();
+      }
+    } else if (changedProperties.has('tag') && this.open) {
+      if (this.tag) {
+        this.formData = { ...this.tag };
       }
     }
   }
@@ -118,7 +122,12 @@ export class TagForm extends LitElement {
       await appState.addTag(this.formData);
     }
 
+    this.closeForm();
+  }
+
+  closeForm() {
     this.open = false;
+    this.dispatchEvent(new CustomEvent('drawer-close', { bubbles: true, composed: true }));
   }
 
   render() {
@@ -128,7 +137,7 @@ export class TagForm extends LitElement {
       <drawer-panel
         ?open="${this.open}"
         .title="${isEdit ? 'Edit Tag' : 'Create New Tag'}"
-        @drawer-close="${() => (this.open = false)}"
+        @drawer-close="${this.closeForm}"
       >
         <form @submit="${this.handleSubmit}">
           <div class="form-group">
@@ -207,7 +216,7 @@ export class TagForm extends LitElement {
         </form>
 
         <div slot="footer">
-          <button class="btn-cancel" @click="${() => (this.open = false)}">Cancel</button>
+          <button class="btn-cancel" @click="${this.closeForm}">Cancel</button>
           <button class="btn-submit" @click="${this.handleSubmit}">
             ${isEdit ? 'Save Changes' : 'Create Tag'}
           </button>

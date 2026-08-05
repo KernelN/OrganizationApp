@@ -108,10 +108,11 @@ export class TaskCard extends LitElement {
       display: inline-flex;
       align-items: center;
       gap: 4px;
-      padding: 2px 8px;
+      padding: 2px 10px;
       border-radius: 9999px;
       font-size: 0.75rem;
-      font-weight: 500;
+      font-weight: 600;
+      color: #ffffff;
     }
 
     .priority-badge {
@@ -135,6 +136,15 @@ export class TaskCard extends LitElement {
 
   deleteTask() {
     this.dispatchEvent(new CustomEvent('delete-task', { detail: { task: this.task }, bubbles: true, composed: true }));
+  }
+
+  formatDuration(t) {
+    const totalMins = t.duration_hours != null ? Math.round(t.duration_hours * 60) : (t.duration_minutes || 30);
+    const h = Math.floor(totalMins / 60);
+    const m = totalMins % 60;
+    if (h > 0 && m > 0) return `${h}h ${m}m`;
+    if (h > 0) return `${h}h`;
+    return `${m}m`;
   }
 
   render() {
@@ -173,7 +183,7 @@ export class TaskCard extends LitElement {
           : ''}
 
         <div class="meta-row">
-          <span>⏱️ ${this.task.duration_minutes || 30} mins</span>
+          <span>⏱️ ${this.formatDuration(this.task)}</span>
           <span class="priority-badge">Priority P${this.task.priority ?? 0}</span>
           ${this.task.deadline
             ? html`<span>📅 Deadline: ${new Date(this.task.deadline).toLocaleDateString()}</span>`
@@ -181,10 +191,7 @@ export class TaskCard extends LitElement {
 
           ${taskTags.map(
             tag => html`
-              <span
-                class="tag-chip"
-                style="background-color: ${tag.color}20; color: ${tag.color}; border: 1px solid ${tag.color}40;"
-              >
+              <span class="tag-chip" style="background-color: ${tag.color || '#3B82F6'};">
                 🏷️ ${tag.name}
               </span>
             `

@@ -72,6 +72,23 @@ export class TaskForm extends LitElement {
       gap: 12px;
     }
 
+    .grid-3 {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 10px;
+    }
+
+    .unit-input-group {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .unit-input-group span {
+      font-size: 0.75rem;
+      color: var(--color-text-muted, #6B7280);
+    }
+
     .tag-checkboxes {
       display: flex;
       flex-wrap: wrap;
@@ -82,19 +99,25 @@ export class TaskForm extends LitElement {
       display: inline-flex;
       align-items: center;
       gap: 6px;
-      padding: 6px 12px;
+      padding: 6px 14px;
       border-radius: 9999px;
       font-size: 0.8125rem;
-      border: 1px solid var(--color-border, #2E3242);
-      background: var(--color-bg-base, #121318);
+      font-weight: 600;
+      border: 2px solid transparent;
       cursor: pointer;
+      opacity: 0.6;
+      transition: opacity 150ms ease, transform 150ms ease, border-color 150ms ease;
+    }
+
+    .tag-pill:hover {
+      opacity: 0.85;
+      transform: scale(1.03);
     }
 
     .tag-pill.selected {
-      border-color: var(--color-accent, #6366F1);
-      background: var(--color-accent-subtle, rgba(99, 102, 241, 0.15));
-      color: var(--color-accent, #6366F1);
-      font-weight: 600;
+      opacity: 1;
+      border-color: #ffffff;
+      box-shadow: 0 0 10px rgba(255, 255, 255, 0.3);
     }
 
     .btn-submit {
@@ -124,27 +147,63 @@ export class TaskForm extends LitElement {
     this.formData = this.getInitialData();
   }
 
-  updated(changedProperties) {
-    if (changedProperties.has('task')) {
+  willUpdate(changedProperties) {
+    if (changedProperties.has('open') && this.open) {
       if (this.task) {
-        this.formData = { ...this.task };
+        this.populateFromTask(this.task);
       } else {
         this.formData = this.getInitialData();
       }
+    } else if (changedProperties.has('task') && this.open) {
+      if (this.task) {
+        this.populateFromTask(this.task);
+      }
     }
+  }
+
+  populateFromTask(t) {
+    const totalMins = t.duration_hours != null ? Math.round(t.duration_hours * 60) : (t.duration_minutes || 30);
+    const durationHours = Math.floor(totalMins / 60);
+    const durationMinutes = totalMins % 60;
+
+    const alertMins = t.alert_window_hours != null
+      ? Math.round(t.alert_window_hours * 60)
+      : (t.alert_window_minutes || 120);
+
+    const alertDays = Math.floor(alertMins / (24 * 60));
+    const alertHrs = Math.floor((alertMins % (24 * 60)) / 60);
+    const alertMinRem = alertMins % 60;
+
+    this.formData = {
+      title: t.title || '',
+      description: t.description || '',
+      priority: t.priority ?? 5,
+      tag_ids: t.tag_ids ? [...t.tag_ids] : [],
+      deadline: t.deadline || '',
+      splittable: t.splittable ?? true,
+      ignore_breaks: t.ignore_breaks ?? false,
+      durationHours,
+      durationMinutes,
+      alertDays,
+      alertHours: alertHrs,
+      alertMinutes: alertMinRem
+    };
   }
 
   getInitialData() {
     return {
       title: '',
       description: '',
-      duration_minutes: 30,
       priority: 5,
       tag_ids: [],
       deadline: '',
-      alert_window_minutes: 120,
       splittable: true,
-      ignore_breaks: false
+      ignore_breaks: false,
+      durationHours: 0,
+      durationMinutes: 30,
+      alertDays: 0,
+      alertHours: 2,
+      alertMinutes: 0
     };
   }
 
@@ -162,14 +221,35 @@ export class TaskForm extends LitElement {
     e.preventDefault();
     if (!this.formData.title.trim()) return;
 
+    const totalDurationHours = Number(this.formData.durationHours || 0) + (Number(this.formData.durationMinutes || 0) / 60);
+    const totalAlertHours = (Number(this.formData.alertDays || 0) * 24) + Number(this.formData.alertHours || 0) + (Number(this.formData.alertMinutes || 0) / 60);
+
+    const payload = {
+      title: this.formData.title,
+      description: this.formData.description,
+      priority: Math.max(1, Number(this.formData.priority || 1)),
+      tag_ids: this.formData.tag_ids,
+      deadline: this.formData.deadline || null,
+      splittable: this.formData.splittable,
+      ignore_breaks: this.formData.ignore_breaks,
+      duration_hours: Number(totalDurationHours.toFixed(2)),
+      duration_minutes: Math.round(totalDurationHours * 60),
+      alert_window_hours: Number(totalAlertHours.toFixed(2)),
+      alert_window_minutes: Math.round(totalAlertHours * 60)
+    };
+
     if (this.task?.id) {
-      await appState.updateTask(this.task.id, this.formData);
+      await appState.updateTask(this.task.id, payload);
     } else {
-      await appState.addTask(this.formData);
+      await appState.addTask(payload);
     }
 
+    this.closeForm();
+  }
+
+  closeForm() {
     this.open = false;
-    this.dispatchEvent(new CustomEvent('form-saved'));
+    this.dispatchEvent(new CustomEvent('drawer-close', { bubbles: true, composed: true }));
   }
 
   render() {
@@ -180,7 +260,7 @@ export class TaskForm extends LitElement {
       <drawer-panel
         ?open="${this.open}"
         .title="${isEdit ? 'Edit Task' : 'Create New Task'}"
-        @drawer-close="${() => (this.open = false)}"
+        @drawer-close="${this.closeForm}"
       >
         <form @submit="${this.handleSubmit}">
           <div class="form-group">
@@ -197,71 +277,113 @@ export class TaskForm extends LitElement {
           <div class="form-group">
             <label>Description</label>
             <textarea
-              placeholder="Task details and subtasks..."
+              placeholder="Task details..."
               .value="${this.formData.description || ''}"
               @input="${(e) => (this.formData.description = e.target.value)}"
             ></textarea>
           </div>
 
-          <div class="grid-2">
-            <div class="form-group">
-              <label>Duration (minutes)</label>
-              <input
-                type="number"
-                min="15"
-                step="15"
-                .value="${this.formData.duration_minutes || 30}"
-                @change="${(e) => (this.formData.duration_minutes = Number(e.target.value))}"
-              />
+          <div class="form-group">
+            <label>Duration</label>
+            <div class="grid-2">
+              <div class="unit-input-group">
+                <input
+                  type="number"
+                  min="0"
+                  placeholder="0"
+                  .value="${this.formData.durationHours ?? 0}"
+                  @change="${(e) => (this.formData.durationHours = Number(e.target.value))}"
+                />
+                <span>Hours</span>
+              </div>
+              <div class="unit-input-group">
+                <input
+                  type="number"
+                  min="0"
+                  max="59"
+                  step="5"
+                  placeholder="30"
+                  .value="${this.formData.durationMinutes ?? 30}"
+                  @change="${(e) => (this.formData.durationMinutes = Number(e.target.value))}"
+                />
+                <span>Mins</span>
+              </div>
             </div>
+          </div>
 
-            <div class="form-group">
-              <label>Priority Score (0-10)</label>
-              <input
-                type="number"
-                min="0"
-                max="10"
-                .value="${this.formData.priority ?? 5}"
-                @change="${(e) => (this.formData.priority = Number(e.target.value))}"
-              />
-            </div>
+          <div class="form-group">
+            <label>Priority Score (Min: 1, Higher = First)</label>
+            <input
+              type="number"
+              min="1"
+              .value="${this.formData.priority ?? 5}"
+              @change="${(e) => (this.formData.priority = Number(e.target.value))}"
+            />
           </div>
 
           <div class="form-group">
             <label>Tags</label>
             <div class="tag-checkboxes">
-              ${availableTags.map(
-                tag => html`
+              ${availableTags.map(tag => {
+                const isSelected = this.formData.tag_ids?.includes(tag.id);
+                return html`
                   <div
-                    class="tag-pill ${this.formData.tag_ids?.includes(tag.id) ? 'selected' : ''}"
+                    class="tag-pill ${isSelected ? 'selected' : ''}"
+                    style="background-color: ${tag.color || '#3B82F6'}; color: #ffffff;"
                     @click="${() => this.toggleTag(tag.id)}"
                   >
                     🏷️ ${tag.name}
                   </div>
-                `
-              )}
+                `;
+              })}
             </div>
           </div>
 
-          <div class="grid-2">
-            <div class="form-group">
-              <label>Deadline (Optional)</label>
-              <input
-                type="datetime-local"
-                .value="${this.formData.deadline ? this.formData.deadline.substring(0, 16) : ''}"
-                @change="${(e) => (this.formData.deadline = e.target.value ? new Date(e.target.value).toISOString() : null)}"
-              />
-            </div>
+          <div class="form-group">
+            <label>Deadline (Optional)</label>
+            <input
+              type="datetime-local"
+              .value="${this.formData.deadline ? this.formData.deadline.substring(0, 16) : ''}"
+              @change="${(e) => (this.formData.deadline = e.target.value ? new Date(e.target.value).toISOString() : '')}"
+            />
+          </div>
 
-            <div class="form-group">
-              <label>Alert Window (mins)</label>
-              <input
-                type="number"
-                min="0"
-                step="15"
-                .value="${this.formData.alert_window_minutes || 120}"
-                @change="${(e) => (this.formData.alert_window_minutes = Number(e.target.value))}"
-              />
+          <div class="form-group">
+            <label>Alert Window Before Deadline</label>
+            <div class="grid-3">
+              <div class="unit-input-group">
+                <input
+                  type="number"
+                  min="0"
+                  placeholder="0"
+                  .value="${this.formData.alertDays ?? 0}"
+                  @change="${(e) => (this.formData.alertDays = Number(e.target.value))}"
+                />
+                <span>Days</span>
+              </div>
+              <div class="unit-input-group">
+                <input
+                  type="number"
+                  min="0"
+                  max="23"
+                  placeholder="2"
+                  .value="${this.formData.alertHours ?? 2}"
+                  @change="${(e) => (this.formData.alertHours = Number(e.target.value))}"
+                />
+                <span>Hours</span>
+              </div>
+              <div class="unit-input-group">
+                <input
+                  type="number"
+                  min="0"
+                  max="59"
+                  step="5"
+                  placeholder="0"
+                  .value="${this.formData.alertMinutes ?? 0}"
+                  @change="${(e) => (this.formData.alertMinutes = Number(e.target.value))}"
+                />
+                <span>Mins</span>
+              </div>
             </div>
           </div>
 
@@ -272,7 +394,7 @@ export class TaskForm extends LitElement {
                 .checked="${this.formData.splittable ?? true}"
                 @change="${(e) => (this.formData.splittable = e.target.checked)}"
               />
-              Allow Cronograma to split task across slots
+              Allow Cronograma to split task across non-contiguous slots
             </label>
           </div>
 
@@ -298,7 +420,7 @@ export class TaskForm extends LitElement {
         </form>
 
         <div slot="footer">
-          <button class="btn-cancel" @click="${() => (this.open = false)}">Cancel</button>
+          <button class="btn-cancel" @click="${this.closeForm}">Cancel</button>
           <button class="btn-submit" @click="${this.handleSubmit}">
             ${isEdit ? 'Save Changes' : 'Create Task'}
           </button>

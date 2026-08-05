@@ -19,20 +19,38 @@ export function computeTaskAlertLevel(task, now, availableWorkMinutesBeforeDeadl
     return 'red'; // Deadline passed
   }
 
+  const durationMinutes = task.duration_hours != null ? task.duration_hours * 60 : (task.duration_minutes || 30);
+
   // Red Alert: Not enough available work time before deadline to fulfill task duration
-  if (availableWorkMinutesBeforeDeadline < task.duration_minutes) {
+  if (availableWorkMinutesBeforeDeadline < durationMinutes) {
     return 'red';
   }
 
-  // Orange Alert: Within configured alert window (e.g. 120 minutes before deadline)
-  if (task.alert_window_minutes != null) {
-    const alertStartTime = deadlineDate.getTime() - (task.alert_window_minutes * 60 * 1000);
+  // Orange Alert: Within configured alert window
+  const alertWindowMinutes = getAlertWindowMinutes(task);
+  if (alertWindowMinutes != null && alertWindowMinutes > 0) {
+    const alertStartTime = deadlineDate.getTime() - (alertWindowMinutes * 60 * 1000);
     if (now.getTime() >= alertStartTime) {
       return 'orange';
     }
   }
 
   return 'none';
+}
+
+/**
+ * Compute total alert window in minutes from task object.
+ * @param {Object} task 
+ * @returns {number|null}
+ */
+export function getAlertWindowMinutes(task) {
+  if (task.alert_window_hours != null) {
+    return task.alert_window_hours * 60;
+  }
+  if (task.alert_window_minutes != null) {
+    return task.alert_window_minutes;
+  }
+  return null;
 }
 
 /**
@@ -46,5 +64,6 @@ export function computeTaskSlack(task, now) {
   const deadlineMs = new Date(task.deadline).getTime();
   const nowMs = now.getTime();
   const totalMinutesUntilDeadline = Math.max(0, Math.floor((deadlineMs - nowMs) / 60000));
-  return totalMinutesUntilDeadline - task.duration_minutes;
+  const durationMinutes = task.duration_hours != null ? task.duration_hours * 60 : (task.duration_minutes || 30);
+  return totalMinutesUntilDeadline - durationMinutes;
 }

@@ -79,8 +79,8 @@ export function computeSchedule(tasks = [], tags = [], dependencies = [], settin
     }
 
     // 2. Direct/Indirect Hard Dependency Precedence
-    if (hasHardDependencyChain(a.id, b.id, dependencies)) return 1; // b must be scheduled before a
-    if (hasHardDependencyChain(b.id, a.id, dependencies)) return -1; // a must be scheduled before b
+    if (hasHardDependencyChain(a.id, b.id, dependencies)) return 1;
+    if (hasHardDependencyChain(b.id, a.id, dependencies)) return -1;
 
     // 3. Task Priority Integer (Higher = First)
     if ((b.priority || 0) !== (a.priority || 0)) {
@@ -93,7 +93,9 @@ export function computeSchedule(tasks = [], tags = [], dependencies = [], settin
     }
 
     // 5. Duration (Shorter first to fill tight gaps)
-    return (a.duration_minutes || 0) - (b.duration_minutes || 0);
+    const durA = a.duration_hours != null ? a.duration_hours * 60 : (a.duration_minutes || 30);
+    const durB = b.duration_hours != null ? b.duration_hours * 60 : (b.duration_minutes || 30);
+    return durA - durB;
   });
 
   // ─── PHASE 8: Allocate Slots (Greedy Fill) ─────────────────
@@ -130,9 +132,10 @@ export function computeSchedule(tasks = [], tags = [], dependencies = [], settin
     }
 
     const { allocated, isComplete } = allocateSlotsForTask(task, candidateSlots, slotGranularity);
+    const durationMinutes = task.duration_hours != null ? task.duration_hours * 60 : (task.duration_minutes || 30);
 
     if (!isComplete || task._alert_level === 'red') {
-      const slotsNeeded = Math.ceil((task.duration_minutes || 30) / slotGranularity);
+      const slotsNeeded = Math.ceil(durationMinutes / slotGranularity);
       const deficit = Math.max(0, (slotsNeeded - allocated.length) * slotGranularity);
       alerts.push({
         task_id: task.id,

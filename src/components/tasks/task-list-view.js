@@ -61,7 +61,6 @@ export class TaskListView extends LitElement {
       cursor: pointer;
       border: none;
       background: transparent;
-
       transition: background 150ms ease, color 150ms ease;
     }
 
@@ -140,6 +139,11 @@ export class TaskListView extends LitElement {
     this.deletingTask = e.detail.task;
   }
 
+  closeForm() {
+    this.isFormOpen = false;
+    this.editingTask = null;
+  }
+
   async confirmDelete() {
     if (this.deletingTask) {
       await appState.deleteTask(this.deletingTask.id);
@@ -165,7 +169,6 @@ export class TaskListView extends LitElement {
       list = list.filter(t => t.title.toLowerCase().includes(q) || t.description?.toLowerCase().includes(q));
     }
 
-    // Sort by priority descending
     return list.sort((a, b) => (b.priority ?? 0) - (a.priority ?? 0));
   }
 
@@ -237,7 +240,7 @@ export class TaskListView extends LitElement {
       <task-form
         ?open="${this.isFormOpen}"
         .task="${this.editingTask}"
-        @drawer-close="${() => (this.isFormOpen = false)}"
+        @drawer-close="${this.closeForm}"
       ></task-form>
 
       <confirm-dialog

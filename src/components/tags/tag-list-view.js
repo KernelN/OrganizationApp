@@ -136,6 +136,11 @@ export class TagListView extends LitElement {
     this.deletingTag = tag;
   }
 
+  closeForm() {
+    this.isFormOpen = false;
+    this.editingTag = null;
+  }
+
   async confirmDelete() {
     if (this.deletingTag) {
       await appState.deleteTag(this.deletingTag.id);
@@ -193,7 +198,7 @@ export class TagListView extends LitElement {
       <tag-form
         ?open="${this.isFormOpen}"
         .tag="${this.editingTag}"
-        @drawer-close="${() => (this.isFormOpen = false)}"
+        @drawer-close="${this.closeForm}"
       ></tag-form>
 
       <confirm-dialog
