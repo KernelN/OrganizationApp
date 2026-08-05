@@ -1,8 +1,13 @@
 import { LitElement, html, css } from 'lit';
-import { Router } from '@lit-labs/router';
 import { appState } from './state/app-state.js';
+import './components/tasks/task-list-view.js';
+import './components/tags/tag-list-view.js';
 
 export class AppShell extends LitElement {
+  static properties = {
+    currentRoute: { type: String }
+  };
+
   static styles = css`
     :host {
       display: flex;
@@ -165,49 +170,59 @@ export class AppShell extends LitElement {
 
   constructor() {
     super();
-    this.currentPath = window.location.hash || '#calendar';
-    this._router = new Router(this, [
-      {
-        path: '',
-        render: () => this.renderPage('Calendar', html`<div class="card-elevated" style="padding: 24px;"><h2>📅 Calendar View</h2><p style="color: var(--color-text-secondary); margin-top: 8px;">Interactive timeline, day grid, and slot manager coming in Phase 4.</p></div>`)
-      },
-      {
-        path: 'calendar',
-        render: () => this.renderPage('Calendar', html`<div class="card-elevated" style="padding: 24px;"><h2>📅 Calendar View</h2><p style="color: var(--color-text-secondary); margin-top: 8px;">Interactive timeline, day grid, and slot manager coming in Phase 4.</p></div>`)
-      },
-      {
-        path: 'tasks',
-        render: () => this.renderPage('Tasks', html`<div class="card-elevated" style="padding: 24px;"><h2>📋 Tasks View</h2><p style="color: var(--color-text-secondary); margin-top: 8px;">Task list, filterable drawer, and dependency graph coming in Phase 3.</p></div>`)
-      },
-      {
-        path: 'tags',
-        render: () => this.renderPage('Tags', html`<div class="card-elevated" style="padding: 24px;"><h2>🏷️ Tags View</h2><p style="color: var(--color-text-secondary); margin-top: 8px;">Tag time budget windows and auto-expand rules coming in Phase 3.</p></div>`)
-      },
-      {
-        path: 'history',
-        render: () => this.renderPage('History', html`<div class="card-elevated" style="padding: 24px;"><h2>📜 History View</h2><p style="color: var(--color-text-secondary); margin-top: 8px;">Completed tasks, tag breakdown, and historical logs coming in Phase 4.</p></div>`)
-      },
-      {
-        path: 'settings',
-        render: () => this.renderPage('Settings', html`<div class="card-elevated" style="padding: 24px;"><h2>⚙️ Settings View</h2><p style="color: var(--color-text-secondary); margin-top: 8px;">Work windows, break hours, theme customization, and GitHub sync settings coming in Phase 5.</p></div>`)
-      }
-    ]);
-
-    window.addEventListener('hashchange', () => {
-      this.currentPath = window.location.hash || '#calendar';
-      this.requestUpdate();
-    });
+    this.currentRoute = this.getRouteFromHash();
+    this.onHashChange = this.onHashChange.bind(this);
   }
 
   connectedCallback() {
     super.connectedCallback();
     appState.init();
-    appState.subscribe(() => this.requestUpdate());
+    window.addEventListener('hashchange', this.onHashChange);
+    this.unsubscribeState = appState.subscribe(() => this.requestUpdate());
+  }
+
+  disconnectedCallback() {
+    super.disconnectedCallback();
+    window.removeEventListener('hashchange', this.onHashChange);
+    if (this.unsubscribeState) this.unsubscribeState();
+  }
+
+  getRouteFromHash() {
+    const hash = window.location.hash.replace('#', '') || 'calendar';
+    return hash;
+  }
+
+  onHashChange() {
+    this.currentRoute = this.getRouteFromHash();
   }
 
   isActive(route) {
-    const current = window.location.hash || '#calendar';
-    return current === route;
+    return this.currentRoute === route;
+  }
+
+  renderRouteContent() {
+    switch (this.currentRoute) {
+      case 'tasks':
+        return this.renderPage('Tasks', html`<task-list-view></task-list-view>`);
+      case 'tags':
+        return this.renderPage('Tags', html`<tag-list-view></tag-list-view>`);
+      case 'history':
+        return this.renderPage(
+          'History',
+          html`<div class="card-elevated" style="padding: 24px;"><h2>📜 History View</h2><p style="color: var(--color-text-secondary); margin-top: 8px;">Completed tasks, tag breakdown, and historical logs coming in Phase 4.</p></div>`
+        );
+      case 'settings':
+        return this.renderPage(
+          'Settings',
+          html`<div class="card-elevated" style="padding: 24px;"><h2>⚙️ Settings View</h2><p style="color: var(--color-text-secondary); margin-top: 8px;">Work windows, break hours, theme customization, and GitHub sync settings coming in Phase 5.</p></div>`
+        );
+      case 'calendar':
+      default:
+        return this.renderPage(
+          'Calendar',
+          html`<div class="card-elevated" style="padding: 24px;"><h2>📅 Calendar View</h2><p style="color: var(--color-text-secondary); margin-top: 8px;">Interactive timeline, day grid, and slot manager coming in Phase 4.</p></div>`
+        );
+    }
   }
 
   renderPage(title, content) {
@@ -234,31 +249,31 @@ export class AppShell extends LitElement {
             <div class="brand-title">Cronograma</div>
           </div>
           <ul class="nav-list">
-            <li class="nav-item ${this.isActive('#calendar') ? 'active' : ''}">
+            <li class="nav-item ${this.isActive('calendar') ? 'active' : ''}">
               <a href="#calendar">
                 <span class="nav-icon">📅</span>
                 <span>Calendar</span>
               </a>
             </li>
-            <li class="nav-item ${this.isActive('#tasks') ? 'active' : ''}">
+            <li class="nav-item ${this.isActive('tasks') ? 'active' : ''}">
               <a href="#tasks">
                 <span class="nav-icon">📋</span>
                 <span>Tasks</span>
               </a>
             </li>
-            <li class="nav-item ${this.isActive('#tags') ? 'active' : ''}">
+            <li class="nav-item ${this.isActive('tags') ? 'active' : ''}">
               <a href="#tags">
                 <span class="nav-icon">🏷️</span>
                 <span>Tags</span>
               </a>
             </li>
-            <li class="nav-item ${this.isActive('#history') ? 'active' : ''}">
+            <li class="nav-item ${this.isActive('history') ? 'active' : ''}">
               <a href="#history">
                 <span class="nav-icon">📜</span>
                 <span>History</span>
               </a>
             </li>
-            <li class="nav-item ${this.isActive('#settings') ? 'active' : ''}">
+            <li class="nav-item ${this.isActive('settings') ? 'active' : ''}">
               <a href="#settings">
                 <span class="nav-icon">⚙️</span>
                 <span>Settings</span>
@@ -273,28 +288,28 @@ export class AppShell extends LitElement {
 
       <!-- Main Workspace -->
       <main class="main-content">
-        ${this._router.outlet()}
+        ${this.renderRouteContent()}
       </main>
 
       <!-- Mobile Bottom Nav -->
       <nav class="bottom-nav">
-        <a href="#calendar" class="${this.isActive('#calendar') ? 'active' : ''}">
+        <a href="#calendar" class="${this.isActive('calendar') ? 'active' : ''}">
           <span>📅</span>
           <span>Calendar</span>
         </a>
-        <a href="#tasks" class="${this.isActive('#tasks') ? 'active' : ''}">
+        <a href="#tasks" class="${this.isActive('tasks') ? 'active' : ''}">
           <span>📋</span>
           <span>Tasks</span>
         </a>
-        <a href="#tags" class="${this.isActive('#tags') ? 'active' : ''}">
+        <a href="#tags" class="${this.isActive('tags') ? 'active' : ''}">
           <span>🏷️</span>
           <span>Tags</span>
         </a>
-        <a href="#history" class="${this.isActive('#history') ? 'active' : ''}">
+        <a href="#history" class="${this.isActive('history') ? 'active' : ''}">
           <span>📜</span>
           <span>History</span>
         </a>
-        <a href="#settings" class="${this.isActive('#settings') ? 'active' : ''}">
+        <a href="#settings" class="${this.isActive('settings') ? 'active' : ''}">
           <span>⚙️</span>
           <span>Settings</span>
         </a>
