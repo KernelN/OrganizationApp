@@ -1,84 +1,65 @@
-# Cronograma - Online Setup & Cross-Platform Sync Guide
+# Cronograma - Vercel Online Setup & Cross-Platform Sync Guide
 
-This guide will walk you through hosting **Cronograma** online for free using GitHub Pages (via GitHub Actions) and configuring cross-platform backup sync (Desktop & Mobile) using GitHub API.
-
----
-
-## 🌐 Step 1: Enable GitHub Pages Deployment (GitHub Actions)
-
-1. Go to your repository settings on GitHub: **[KernelN/OrganizationApp Settings](https://github.com/KernelN/OrganizationApp/settings/pages)**.
-2. In the left sidebar, click **Pages** (under *Code and automation*).
-3. Under **Build and deployment**:
-   - Set **Source** dropdown to **GitHub Actions**.
-
-### How Deployment Works:
-- **Automatic**: Every time you push code changes to the `main` branch, GitHub Actions will automatically run `.github/workflows/deploy.yml` to build Vite and deploy the live app.
-- **Manual Trigger**: To trigger a deployment manually at any time:
-  1. Go to the **Actions** tab at the top of your repository.
-  2. Click **Deploy to GitHub Pages** in the left menu.
-  3. Click **Run workflow** (top right) $\rightarrow$ Select `main` $\rightarrow$ Click **Run workflow**.
-
-4. Once deployed (~30 seconds), your app will be live at:
-   👉 **`https://KernelN.github.io/OrganizationApp/`**
+This guide walks you through deploying **Cronograma** for free on [Vercel](https://vercel.com), setting up Vercel KV storage, and using zero-config cloud sync across all your devices (Desktop, iPhone, Android).
 
 ---
 
-## 🔑 Step 2: Create a Dedicated Backup Sync Branch
+## 🌐 Step 1: Deploy Cronograma on Vercel
 
-To keep your personal tasks, schedules, and settings separate from the main application source code:
-
-1. In your repository on GitHub: **[KernelN/OrganizationApp](https://github.com/KernelN/OrganizationApp)**.
-2. Click the branch dropdown (`main`) $\rightarrow$ type `backup-data` $\rightarrow$ click **Create branch: backup-data**.
-
----
-
-## 🔐 Step 3: Generate a GitHub Personal Access Token (PAT)
-
-Your PAT allows Cronograma running in your browser (Desktop or Mobile) to privately save and load data from your GitHub repository.
-
-1. Go to GitHub $\rightarrow$ **Settings** (Click your profile avatar at top-right $\rightarrow$ **Settings**).
-2. Scroll down the left sidebar and click **Developer settings**.
-3. Under **Personal access tokens**, choose **Fine-grained tokens** (or **Tokens (classic)**):
-   - **Token name**: `Cronograma Sync`
-   - **Expiration**: Choose your preferred duration (e.g. 90 days or No expiration).
-   - **Repository access**: Select *Only select repositories* $\rightarrow$ pick `KernelN/OrganizationApp`.
-   - **Permissions**: Expand **Repository permissions** $\rightarrow$ set **Contents** to **Read and write**.
-4. Click **Generate token** and copy your token string (starts with `github_pat_` or `ghp_`).
+1. Log in to your [Vercel Account](https://vercel.com) (or sign up using GitHub).
+2. Click **Add New...** $\rightarrow$ **Project**.
+3. Select your GitHub repository **`KernelN/OrganizationApp`** and click **Import**.
+4. Framework Preset will automatically be detected as **Vite**.
+5. Keep default build settings and click **Deploy**.
+6. In ~30 seconds, Vercel will build and launch your application live at your project domain (e.g., `https://organization-app.vercel.app`).
 
 ---
 
-## 📲 Step 4: Configure Sync on Desktop & Mobile Browsers
+## ⚡ Step 2: Create & Connect Vercel KV Storage
 
-Open **`https://KernelN.github.io/OrganizationApp/`** on any browser (Desktop computer, Phone, Tablet):
+To enable automatic cloud backup and cross-device sync:
 
+1. In your project dashboard on Vercel, click the **Storage** tab in the top navigation bar.
+2. Click **Create Database** $\rightarrow$ select **KV** (Redis key-value database) $\rightarrow$ click **Continue**.
+3. Choose your nearest region and click **Create**.
+4. In the database setup page, click **Connect Project** $\rightarrow$ select your `OrganizationApp` project.
+5. Vercel will automatically inject `KV_REST_API_URL` and `KV_REST_API_TOKEN` environment variables into your serverless function backend (`/api/sync`).
+
+---
+
+## 📱 Step 3: Zero-Config Cloud Sync Across All Devices
+
+Once deployed and connected to Vercel KV:
+
+1. Open your Vercel URL on any computer, phone, or tablet (e.g. `https://organization-app.vercel.app`).
+2. **Cronograma is 100% Zero-Config out of the box!**
+   - Vercel Sync is **enabled automatically**.
+   - All your devices default to the shared sync key `crono_main_sync`.
+3. Any task, tag, or schedule created on your phone will automatically push to Vercel Cloud and restore on your laptop!
+
+### Optional: Changing your Sync Key
+If you ever want to isolate a specific device or use a custom private database key:
 1. Open **Settings** inside Cronograma.
-2. Under **🔄 GitHub Backup Sync**:
-   - Check **Enable Sync**.
-   - **Personal Access Token (PAT)**: Paste your token.
-   - **Repo Owner**: `KernelN`
-   - **Repo Name**: `OrganizationApp`
-   - **Target Branch**: `backup-data`
-   - **Data Folder Path**: `data/`
-3. Click **Test Connection**. You should see `✅ Connection successful!`.
-4. Click **Sync Now (Push)** to backup local data, or **Pull from GitHub** to restore data onto a new device.
+2. Scroll to **⚡ Vercel Serverless Sync**.
+3. Click **Generate Key** or enter a custom key string, then click **Sync Now (Push)**.
 
 ---
 
-## 📱 Step 5: Install as a Mobile & Desktop PWA
+## 📲 Step 4: Install as a Mobile & Desktop PWA
 
-Cronograma is a full Progressive Web App (PWA) that can be installed on home screens for an app-like experience with offline support:
+Cronograma is a full Progressive Web App (PWA) that installs directly on home screens with offline support and app-like performance:
 
 ### iOS (iPhone / iPad)
-1. Open `https://KernelN.github.io/OrganizationApp/` in **Safari**.
+1. Open your Vercel URL in **Safari**.
 2. Tap the **Share** button (bottom toolbar).
 3. Scroll down and tap **Add to Home Screen**.
 4. Launch Cronograma directly from your iOS Home Screen!
 
 ### Android (Phone / Tablet)
-1. Open `https://KernelN.github.io/OrganizationApp/` in **Chrome**.
+1. Open your Vercel URL in **Chrome**.
 2. Tap the 3 dots menu (top-right).
 3. Tap **Install app** or **Add to Home Screen**.
 
-### Desktop (Chrome / Edge / Brave)
+### Desktop (Chrome / Edge / Brave / Safari)
 1. Look for the **Install App** icon in the address bar (top right).
 2. Click **Install** to add Cronograma to your Desktop applications.
