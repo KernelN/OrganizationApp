@@ -1,0 +1,36 @@
+/* Global theme resets and default dark mode surface styles */
+body {
+  margin: 0;
+  padding: 0;
+  background-color: var(--bg-primary);
+  color: var(--text-primary);
+  font-family: var(--font-family);
+  font-size: 14px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  overflow-x: hidden;
+}
+
+/* Pulsing Red Alert Keyframes */
+@keyframes pulse-red-alert {
+  0% {
+    box-shadow: 0 0 4px var(--alert-red-glow);
+    border-color: var(--alert-red);
+  }
+  50% {
+    box-shadow: 0 0 16px var(--alert-red-glow);
+    border-color: hsl(0, 100%, 70%);
+  }
+  100% {
+    box-shadow: 0 0 4px var(--alert-red-glow);
+    border-color: var(--alert-red);
+  }
+}
+
+/* Computing Pulse Keyframes */
+@keyframes pulse-computing {
+  0% { opacity: 0.4; }
+  50% { opacity: 1; }
+  100% { opacity: 0.4; }
+}

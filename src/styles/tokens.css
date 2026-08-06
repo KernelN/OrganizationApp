@@ -1,0 +1,58 @@
+:root {
+  /* ── Base Surfaces ── */
+  --bg-primary:     hsl(230, 15%, 8%);     /* App background */
+  --bg-secondary:   hsl(230, 15%, 12%);    /* Cards, panels */
+  --bg-tertiary:    hsl(230, 15%, 16%);    /* Elevated elements, hover states */
+  --bg-surface:     hsl(230, 15%, 20%);    /* Input fields, wells */
+
+  /* ── Accent Initial Base Defaults ── */
+  --accent-h:       239;
+  --accent-s:       84%;
+  --accent-l:       67%;
+  
+  --accent:         hsl(var(--accent-h), var(--accent-s), var(--accent-l));
+  --accent-hover:   hsl(var(--accent-h), var(--accent-s), calc(var(--accent-l) + 10%));
+  --accent-muted:   hsl(var(--accent-h), calc(var(--accent-s) * 0.5), 25%);
+  --accent-glow:    hsla(var(--accent-h), var(--accent-s), var(--accent-l), 0.25);
+
+  /* ── Semantic Colors ── */
+  --alert-orange:   hsl(30, 100%, 60%);
+  --alert-orange-glow: hsla(30, 100%, 60%, 0.25);
+  --alert-red:      hsl(0, 85%, 60%);
+  --alert-red-glow: hsla(0, 85%, 60%, 0.35);
+  --success:        hsl(145, 70%, 50%);
+  --text-primary:   hsl(0, 0%, 92%);
+  --text-secondary: hsl(0, 0%, 65%);
+  --text-muted:     hsl(0, 0%, 45%);
+  --border:         hsl(230, 15%, 22%);
+  --border-hover:   hsl(230, 15%, 32%);
+
+  /* ── Typography ── */
+  --font-family:    'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-mono:      'JetBrains Mono', 'Fira Code', monospace;
+
+  /* ── Spacing Scale ── */
+  --space-xs:  4px;
+  --space-sm:  8px;
+  --space-md:  16px;
+  --space-lg:  24px;
+  --space-xl:  32px;
+  --space-2xl: 48px;
+
+  /* ── Radius ── */
+  --radius-sm:  6px;
+  --radius-md:  10px;
+  --radius-lg:  16px;
+  --radius-xl:  24px;
+
+  /* ── Shadows (dark theme) ── */
+  --shadow-sm:  0 1px 3px rgba(0,0,0,0.4);
+  --shadow-md:  0 4px 12px rgba(0,0,0,0.5);
+  --shadow-lg:  0 8px 30px rgba(0,0,0,0.6);
+  --glow:       0 0 20px var(--accent-glow);
+
+  /* ── Transitions ── */
+  --transition-fast: 150ms ease;
+  --transition-base: 250ms ease;
+  --transition-slow: 400ms cubic-bezier(0.4, 0, 0.2, 1);
+}
