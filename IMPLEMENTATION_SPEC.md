@@ -373,7 +373,7 @@ sequenceDiagram
 
     "break_windows": {
       "type": "object",
-      "description": "Per-day-of-week break slots within work hours.",
+      "description": "Per-day-of-week break slots within work hours. Supports multiple arbitrary break windows (e.g. Pomodoro intervals or lunch breaks).",
       "properties": {
         "monday":    { "$ref": "#/definitions/dayWindows" },
         "tuesday":   { "$ref": "#/definitions/dayWindows" },
@@ -384,11 +384,11 @@ sequenceDiagram
         "sunday":    { "$ref": "#/definitions/dayWindows" }
       },
       "default": {
-        "monday":    [{ "start": "12:00", "end": "13:00" }],
-        "tuesday":   [{ "start": "12:00", "end": "13:00" }],
-        "wednesday": [{ "start": "12:00", "end": "13:00" }],
-        "thursday":  [{ "start": "12:00", "end": "13:00" }],
-        "friday":    [{ "start": "12:00", "end": "13:00" }],
+        "monday":    [{ "start": "10:50", "end": "11:00" }, { "start": "12:00", "end": "13:00" }, { "start": "14:50", "end": "15:00" }],
+        "tuesday":   [{ "start": "10:50", "end": "11:00" }, { "start": "12:00", "end": "13:00" }, { "start": "14:50", "end": "15:00" }],
+        "wednesday": [{ "start": "10:50", "end": "11:00" }, { "start": "12:00", "end": "13:00" }, { "start": "14:50", "end": "15:00" }],
+        "thursday":  [{ "start": "10:50", "end": "11:00" }, { "start": "12:00", "end": "13:00" }, { "start": "14:50", "end": "15:00" }],
+        "friday":    [{ "start": "10:50", "end": "11:00" }, { "start": "12:00", "end": "13:00" }, { "start": "14:50", "end": "15:00" }],
         "saturday":  [],
         "sunday":    []
       }
@@ -530,7 +530,8 @@ FUNCTION computeSchedule(tasks, tags, dependencies, settings, now):
   
   // Generate all available time slots from `now` to `horizon`
   allSlots = generateTimeSlots(now, horizon, settings.work_windows, settings.break_windows, slotSizeHours)
-  // Each slot: { start: DateTime, end: DateTime, dayOfWeek: int, duration_hours: float }
+  // Each slot: { start: DateTime, end: DateTime, dayOfWeek: int, duration_hours: float, is_break: boolean }
+  // (is_break is true if the slot overlaps with any window in settings.break_windows)
 
   // ─── PHASE 1: Reserve Locked Blocks ─────────────────────
   lockedBlocks = []
@@ -649,7 +650,7 @@ FUNCTION computeSchedule(tasks, tags, dependencies, settings, now):
       // Use global work window slots, excluding tag-reserved slots
       availableSlots = allSlots.filter(s => !s.occupied AND !s.tagReserved)
       IF NOT task.ignore_breaks:
-        availableSlots = availableSlots.filter(s => !isBreakSlot(s, settings.break_windows))
+        availableSlots = availableSlots.filter(s => !s.is_break)
 
     // Soft dependency check: can we fit this task if we schedule its prerequisite first?
     FOR dep IN softDependenciesOf(task):
@@ -1296,7 +1297,16 @@ Fields:
 #### 5.3.6 Settings View
 
 Organized into collapsible sections:
-1. **Schedule** — Work windows, break windows, scheduler interval, horizon, granularity, default splittable
+1. **Schedule**:
+   - **Work Windows**: Per-day-of-week active hours grid editor.
+   - **Break Windows**: Per-day-of-week break list editor. Supports adding, editing, and deleting multiple arbitrary break slots per day.
+   - **Break Pattern Generator Utility**: A helper form allowing users to easily bulk-generate Pomodoro breaks:
+     - *Work Period* (e.g., 50 minutes)
+     - *Break Period* (e.g., 10 minutes)
+     - *Time Span* (e.g., 09:00 to 17:00)
+     - *Target Days* (Monday through Sunday checkboxes)
+     - *Action*: "Generate Breaks" populates target days' `break_windows` with corresponding slots automatically.
+   - **General Parameters**: Scheduler interval, horizon, slot granularity, default splittable toggle.
 2. **Appearance** — Accent color picker, locale
 3. **Tasks** — Default accumulation cap, completed history limit
 4. **Sync** — GitHub PAT input (password-masked), repo owner, repo name, branch, data path, "Test Connection" button, "Sync Now" button, "Pull from GitHub" button (with confirmation), last sync timestamp
