@@ -37,13 +37,10 @@ export const DEFAULT_SETTINGS = {
   default_accumulation_cap: 5,
   default_splittable: true,
   locale: 'en',
-  github_sync: {
+  vercel_sync: {
     enabled: false,
-    pat: '',
-    repo_owner: '',
-    repo_name: '',
-    branch: 'main',
-    data_path: 'data/'
+    sync_key: '',
+    api_url: '/api/sync'
   },
   schema_version: 1
 };
@@ -380,6 +377,9 @@ export class IndexedDBAdapter extends DataAccessLayer {
       const defaultWithKey = { ...DEFAULT_SETTINGS, key: SETTINGS_KEY };
       await db.put('settings', defaultWithKey);
       return defaultWithKey;
+    }
+    if (!settings.vercel_sync) {
+      settings.vercel_sync = { ...DEFAULT_SETTINGS.vercel_sync };
     }
     return settings;
   }

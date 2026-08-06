@@ -1,6 +1,8 @@
 import { LitElement, html, css } from 'lit';
 import { sharedStyles } from '../../styles/shared-styles.js';
 import { appState, AppStateController } from '../../state/app-state.js';
+import { VercelSync } from '../../data/vercel-sync.js';
+import { eventBus } from '../../state/event-bus.js';
 import '../shared/color-picker.js';
 import '../shared/time-range-input.js';
 import '../shared/confirm-dialog.js';
@@ -174,14 +176,30 @@ export class CronoSettingsView extends LitElement {
     this.settings = { ...this.settings, break_windows: updatedBreakWindows };
     this._save();
   }
-
-  async _testGitHubConnection() {
+  async _testVercelConnection() {
     this.testResult = await appState.sync.testConnection();
+  }
+
+  _generateNewKey() {
+    const key = VercelSync.generateSyncKey();
+    const syncConfig = this.settings.vercel_sync || {};
+    const nextSync = { ...syncConfig, sync_key: key };
+    this.settings = { ...this.settings, vercel_sync: nextSync };
+    this._save();
+  }
+
+  async _copySyncKey() {
+    const key = this.settings.vercel_sync?.sync_key;
+    if (key) {
+      await navigator.clipboard.writeText(key);
+      eventBus.emit('toast:show', { message: 'Sync key copied to clipboard!', type: 'success' });
+    }
   }
 
   async _syncNow() {
     try {
       await appState.sync.push(appState.dal);
+      eventBus.emit('toast:show', { message: 'Data pushed to Vercel Cloud successfully.', type: 'success' });
     } catch (err) {
       alert(err.message);
     }
@@ -197,7 +215,7 @@ export class CronoSettingsView extends LitElement {
   }
 
   render() {
-    const syncConfig = this.settings.github_sync || {};
+    const syncConfig = this.settings.vercel_sync || {};
 
     return html`
       <h2 style="margin: 0; font-size: 18px;">Settings</h2>
@@ -315,108 +333,71 @@ export class CronoSettingsView extends LitElement {
         </div>
       </div>
 
-      <!-- GitHub Sync Settings -->
+      <!-- Vercel Serverless Sync Settings -->
       <div class="section-card">
-        <h3 class="section-title">🔄 GitHub Backup Sync</h3>
+        <h3 class="section-title">⚡ Vercel Serverless Sync</h3>
         <div class="row">
-          <div class="form-group">
-            <label>Enable Sync</label>
+          <div class="form-group" style="flex-direction: row; align-items: center; gap: 8px;">
             <input
               type="checkbox"
+              id="vercel-sync-enabled"
               .checked=${!!syncConfig.enabled}
               @change=${e => {
                 const nextSync = { ...syncConfig, enabled: e.target.checked };
-                this.settings = { ...this.settings, github_sync: nextSync };
+                this.settings = { ...this.settings, vercel_sync: nextSync };
                 this._save();
               }}
             />
+            <label for="vercel-sync-enabled" style="text-transform: none; font-size: 14px; cursor: pointer;">Enable Vercel Cloud Sync</label>
           </div>
         </div>
 
         <div class="form-group">
-          <label>Personal Access Token (PAT)</label>
+          <label>Secret Sync Key</label>
+          <div class="row" style="gap: 8px;">
+            <input
+              type="text"
+              class="crono-input"
+              style="font-family: monospace; letter-spacing: 0.05em;"
+              placeholder="crono_sk_..."
+              .value=${syncConfig.sync_key || ''}
+              @input=${e => {
+                const nextSync = { ...syncConfig, sync_key: e.target.value };
+                this.settings = { ...this.settings, vercel_sync: nextSync };
+                this._save();
+              }}
+            />
+            <button class="crono-btn crono-btn-secondary" style="flex: none;" @click=${this._generateNewKey}>Generate</button>
+            <button class="crono-btn crono-btn-secondary" style="flex: none;" @click=${this._copySyncKey} ?disabled=${!syncConfig.sync_key}>Copy</button>
+          </div>
+          <span style="font-size: 11px; color: var(--text-secondary); margin-top: 2px;">
+            Keep this key secret. Use the same key on all your devices to sync tasks and settings.
+          </span>
+        </div>
+
+        <div class="form-group">
+          <label>API Endpoint Path</label>
           <input
-            type="password"
+            type="text"
             class="crono-input"
-            .value=${syncConfig.pat || ''}
+            placeholder="/api/sync"
+            .value=${syncConfig.api_url || '/api/sync'}
             @input=${e => {
-              const nextSync = { ...syncConfig, pat: e.target.value };
-              this.settings = { ...this.settings, github_sync: nextSync };
+              const nextSync = { ...syncConfig, api_url: e.target.value };
+              this.settings = { ...this.settings, vercel_sync: nextSync };
               this._save();
             }}
           />
         </div>
 
-        <div class="row">
-          <div class="form-group">
-            <label>Repo Owner</label>
-            <input
-              type="text"
-              class="crono-input"
-              .value=${syncConfig.repo_owner || ''}
-              @input=${e => {
-                const nextSync = { ...syncConfig, repo_owner: e.target.value };
-                this.settings = { ...this.settings, github_sync: nextSync };
-                this._save();
-              }}
-            />
-          </div>
-
-          <div class="form-group">
-            <label>Repo Name</label>
-            <input
-              type="text"
-              class="crono-input"
-              .value=${syncConfig.repo_name || ''}
-              @input=${e => {
-                const nextSync = { ...syncConfig, repo_name: e.target.value };
-                this.settings = { ...this.settings, github_sync: nextSync };
-                this._save();
-              }}
-            />
-          </div>
-        </div>
-
-        <div class="row">
-          <div class="form-group">
-            <label>Target Branch</label>
-            <input
-              type="text"
-              class="crono-input"
-              placeholder="backup-data"
-              .value=${syncConfig.branch || ''}
-              @input=${e => {
-                const nextSync = { ...syncConfig, branch: e.target.value };
-                this.settings = { ...this.settings, github_sync: nextSync };
-                this._save();
-              }}
-            />
-          </div>
-
-          <div class="form-group">
-            <label>Data Folder Path</label>
-            <input
-              type="text"
-              class="crono-input"
-              placeholder="data/"
-              .value=${syncConfig.data_path || ''}
-              @input=${e => {
-                const nextSync = { ...syncConfig, data_path: e.target.value };
-                this.settings = { ...this.settings, github_sync: nextSync };
-                this._save();
-              }}
-            />
-          </div>
-        </div>
-
         <div class="row" style="margin-top: var(--space-sm);">
-          <button class="crono-btn crono-btn-secondary" @click=${this._testGitHubConnection}>Test Connection</button>
+          <button class="crono-btn crono-btn-secondary" @click=${this._testVercelConnection}>Test Connection</button>
           <button class="crono-btn crono-btn-primary" @click=${this._syncNow}>Sync Now (Push)</button>
-          <button class="crono-btn crono-btn-danger" @click=${() => this.confirmPullOpen = true}>Pull from GitHub</button>
+          <button class="crono-btn crono-btn-danger" @click=${() => this.confirmPullOpen = true}>Pull from Cloud</button>
         </div>
 
         ${this.testResult ? html`
-          <div style="color: ${this.testResult.valid ? 'var(--success)' : 'var(--alert-red)'}; font-size: 13px;">
+          <div style="color: ${this.testResult.valid ? 'var(--success)' : 'var(--alert-red)'}; font-size: 13px; margin-top: 8px;">
             ${this.testResult.valid ? '✅ Connection successful!' : `❌ ${this.testResult.error}`}
           </div>
         ` : ''}
@@ -424,8 +405,8 @@ export class CronoSettingsView extends LitElement {
 
       <crono-confirm-dialog
         .open=${this.confirmPullOpen}
-        title="Restore from GitHub"
-        message="This will overwrite all local data with data from your GitHub repository. Are you sure?"
+        title="Restore from Vercel Cloud"
+        message="This will overwrite all local data with data stored on Vercel Cloud. Are you sure?"
         confirm-text="Overwrite & Pull"
         @crono-confirm=${this._pullNow}
         @crono-cancel=${() => this.confirmPullOpen = false}
