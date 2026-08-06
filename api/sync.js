@@ -6,14 +6,18 @@
  * Uses @vercel/kv REST API if environment variables exist, otherwise falls back to memory store.
  */
 
+// Fallback Vercel KV / Upstash credentials if environment variables are not set in Vercel UI
+const DEFAULT_KV_REST_API_URL = '';
+const DEFAULT_KV_REST_API_TOKEN = '';
+
 // Global in-memory fallback for local development / testing without Vercel KV
 if (!globalThis._cronoSyncStore) {
   globalThis._cronoSyncStore = new Map();
 }
 
 async function getFromKV(key) {
-  const kvUrl = process.env.KV_REST_API_URL;
-  const kvToken = process.env.KV_REST_API_TOKEN;
+  const kvUrl = process.env.KV_REST_API_URL || DEFAULT_KV_REST_API_URL;
+  const kvToken = process.env.KV_REST_API_TOKEN || DEFAULT_KV_REST_API_TOKEN;
 
   if (kvUrl && kvToken) {
     const res = await fetch(`${kvUrl}/get/${encodeURIComponent(key)}`, {
@@ -28,8 +32,8 @@ async function getFromKV(key) {
 }
 
 async function setToKV(key, value) {
-  const kvUrl = process.env.KV_REST_API_URL;
-  const kvToken = process.env.KV_REST_API_TOKEN;
+  const kvUrl = process.env.KV_REST_API_URL || DEFAULT_KV_REST_API_URL;
+  const kvToken = process.env.KV_REST_API_TOKEN || DEFAULT_KV_REST_API_TOKEN;
 
   const stringified = JSON.stringify(value);
 

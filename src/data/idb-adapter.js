@@ -38,8 +38,8 @@ export const DEFAULT_SETTINGS = {
   default_splittable: true,
   locale: 'en',
   vercel_sync: {
-    enabled: false,
-    sync_key: '',
+    enabled: true,
+    sync_key: 'crono_main_sync',
     api_url: '/api/sync'
   },
   schema_version: 1
@@ -380,6 +380,13 @@ export class IndexedDBAdapter extends DataAccessLayer {
     }
     if (!settings.vercel_sync) {
       settings.vercel_sync = { ...DEFAULT_SETTINGS.vercel_sync };
+    } else {
+      if (!settings.vercel_sync.sync_key) {
+        settings.vercel_sync.sync_key = DEFAULT_SETTINGS.vercel_sync.sync_key;
+      }
+      if (typeof settings.vercel_sync.enabled !== 'boolean') {
+        settings.vercel_sync.enabled = true;
+      }
     }
     return settings;
   }
