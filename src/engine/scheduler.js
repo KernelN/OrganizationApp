@@ -1,4 +1,4 @@
-import { generateTimeSlots, formatDateISO, formatHHMM, parseHHMMToMins, diffHours, addDays } from '../utils/date-utils.js';
+import { generateTimeSlots, formatDateISO, formatHHMM, parseHHMMToMins, diffHours, addDays, parseISOToLocalDate } from '../utils/date-utils.js';
 import { buildDependencyGraph, topologicalSort, hasHardDependency } from './dependency-resolver.js';
 import { computeAlertLevel, computeSlack } from './alert-evaluator.js';
 import { expandManualWindows, generateAutoWindows } from './tag-window-expander.js';
@@ -35,7 +35,8 @@ export function computeSchedule(tasks = [], tags = [], dependencies = [], settin
   const horizon = new Date(horizonMs).toISOString();
 
   const slotSizeHours = (settings.slot_granularity_minutes || 15) / 60;
-  const allSlots = generateTimeSlots(now, horizon, settings.work_windows || {}, settings.break_windows || {}, slotSizeHours);
+  const todayStartObj = parseISOToLocalDate(nowObj);
+  const allSlots = generateTimeSlots(todayStartObj, horizon, settings.work_windows || {}, settings.break_windows || {}, slotSizeHours);
 
   const alerts = [];
   const scheduledBlocks = [];
