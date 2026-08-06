@@ -377,6 +377,38 @@ export class CronoSettingsView extends LitElement {
           </div>
         </div>
 
+        <div class="row">
+          <div class="form-group">
+            <label>Target Branch</label>
+            <input
+              type="text"
+              class="crono-input"
+              placeholder="backup-data"
+              .value=${syncConfig.branch || ''}
+              @input=${e => {
+                const nextSync = { ...syncConfig, branch: e.target.value };
+                this.settings = { ...this.settings, github_sync: nextSync };
+                this._save();
+              }}
+            />
+          </div>
+
+          <div class="form-group">
+            <label>Data Folder Path</label>
+            <input
+              type="text"
+              class="crono-input"
+              placeholder="data/"
+              .value=${syncConfig.data_path || ''}
+              @input=${e => {
+                const nextSync = { ...syncConfig, data_path: e.target.value };
+                this.settings = { ...this.settings, github_sync: nextSync };
+                this._save();
+              }}
+            />
+          </div>
+        </div>
+
         <div class="row" style="margin-top: var(--space-sm);">
           <button class="crono-btn crono-btn-secondary" @click=${this._testGitHubConnection}>Test Connection</button>
           <button class="crono-btn crono-btn-primary" @click=${this._syncNow}>Sync Now (Push)</button>
