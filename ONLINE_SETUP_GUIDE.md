@@ -11,7 +11,7 @@ This guide will walk you through hosting **Cronograma** online for free using Gi
 3. In the left sidebar, click on **Pages** (under *Code and automation*).
 4. Under **Build and deployment**:
    - Set **Source** to **GitHub Actions**.
-5. Push the changes to `main` branch. The automated workflow (`.github/workflows/deploy.yml`) will automatically build and publish your app.
+5. Push the changes to `main` branch. The automated workflow (`.github/workflows/deploy.yml`) will automatically build and publish your app. 
 6. Once deployed, your site will be live at:
    👉 **`https://KernelN.github.io/OrganizationApp/`**
 
