@@ -1,5 +1,5 @@
 import { IndexedDBAdapter } from '../data/idb-adapter.js';
-import { GitHubSync } from '../data/github-sync.js';
+import { VercelSync } from '../data/vercel-sync.js';
 import { scheduleState } from './schedule-state.js';
 import { eventBus } from './event-bus.js';
 import { applyAccentColor } from '../utils/color-utils.js';
@@ -7,7 +7,7 @@ import { applyAccentColor } from '../utils/color-utils.js';
 class AppState {
   constructor() {
     this.dal = new IndexedDBAdapter();
-    this.sync = new GitHubSync();
+    this.sync = new VercelSync();
     this.worker = null;
     this.listeners = new Set();
 
@@ -35,9 +35,9 @@ class AppState {
       this.dependencies = await this.dal.getDependencies();
       this.timeLogs = await this.dal.getTimeLogs();
 
-      // 2. Initialize GitHub sync config
-      if (this.settings.github_sync) {
-        this.sync.updateConfig(this.settings.github_sync);
+      // 2. Initialize Vercel sync config
+      if (this.settings.vercel_sync) {
+        this.sync.updateConfig(this.settings.vercel_sync);
       }
 
       // 3. Initialize Worker
@@ -306,8 +306,8 @@ class AppState {
       if (updates.accent_color) {
         applyAccentColor(updates.accent_color);
       }
-      if (updates.github_sync) {
-        this.sync.updateConfig(updates.github_sync);
+      if (updates.vercel_sync) {
+        this.sync.updateConfig(updates.vercel_sync);
       }
       this.triggerRecompute();
       this.debounceSync();
