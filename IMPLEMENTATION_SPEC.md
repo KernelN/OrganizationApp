@@ -528,8 +528,9 @@ FUNCTION computeSchedule(tasks, tags, dependencies, settings, now):
   
   slotSizeHours = settings.slot_granularity_minutes / 60
   
-  // Generate all available time slots from `now` to `horizon`
-  allSlots = generateTimeSlots(now, horizon, settings.work_windows, settings.break_windows, slotSizeHours)
+  // Generate all available time slots starting at 00:00:00 of current local day to horizon
+  todayStart = parseISOToLocalDate(now)
+  allSlots = generateTimeSlots(todayStart, horizon, settings.work_windows, settings.break_windows, slotSizeHours)
   // Each slot: { start: DateTime, end: DateTime, dayOfWeek: int, duration_hours: float, is_break: boolean }
   // (is_break is true if the slot overlaps with any window in settings.break_windows)
 
@@ -542,6 +543,7 @@ FUNCTION computeSchedule(tasks, tags, dependencies, settings, now):
 
   // ─── PHASE 2: Compute Tag Time Windows ──────────────────
   tagWindowMap = {}  // tag_id -> Map<date_string, [{start, end}]>
+  dayCursors = {}    // date_string -> HH:MM cursor for dynamic stacking
   
   FOR tag IN tags WHERE tag.time_window_mode != "none":
     IF tag.time_window_mode == "manual":
@@ -560,13 +562,15 @@ FUNCTION computeSchedule(tasks, tags, dependencies, settings, now):
       minDailyHours = tag.auto_expand_config.minimum_daily_hours
       requiredDailyHours = max(minDailyHours, totalHoursNeeded / availableDays)
       
-      // Clamp to global work window available hours for that day
+      // Split global work windows into sub-chunks around breaks and stack dynamically
       tagWindowMap[tag.id] = generateAutoWindows(
         tag.auto_expand_config.assigned_days,
         requiredDailyHours,
         settings.work_windows,
+        settings.break_windows,
         max(tag.start_date, now),
-        tag.deadline ?? horizon
+        tag.deadline ?? horizon,
+        dayCursors
       )
 
   // ─── PHASE 3: Generate Tag Time-Slot Blocks ─────────────
@@ -647,8 +651,8 @@ FUNCTION computeSchedule(tasks, tags, dependencies, settings, now):
       // Constrain to tag's time windows
       availableSlots = getTagReservedSlots(primaryTag.id).filter(s => !s.occupied)
     ELSE:
-      // Use global work window slots, excluding tag-reserved slots
-      availableSlots = allSlots.filter(s => !s.occupied AND !s.tagReserved)
+      // Use global work window slots strictly outside any tag windows (matchingTagIds is empty)
+      availableSlots = allSlots.filter(s => !s.occupied AND (!s.matchingTagIds || s.matchingTagIds.size === 0))
       IF NOT task.ignore_breaks:
         availableSlots = availableSlots.filter(s => !s.is_break)
 

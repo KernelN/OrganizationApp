@@ -263,6 +263,10 @@ The user picks ONE accent hex color. `src/utils/color-utils.js` decomposes it to
 3. **No external state.** Don't read global variables or module-level mutable state.
 4. **Time is an input.** `now` is passed as a parameter. NEVER call `new Date()` inside engine code.
 5. **ULIDs are generated outside.** Pass a ULID generator function as a dependency if block IDs need generation inside the engine.
+6. **Local Date Parsing.** NEVER pass `'YYYY-MM-DD'` date strings directly to `new Date('YYYY-MM-DD')` because ECMAScript parses them as UTC midnight (`00:00:00.000Z`), causing day-lag shifts in negative timezones. Always use `parseISOToLocalDate(date)`.
+7. **Current Day Slot Generation.** Phase 0 `generateTimeSlots` MUST start at `parseISOToLocalDate(nowObj)` (`00:00:00` of current local day), NOT exact timestamp `now`, ensuring full-day time slots exist for today so morning tasks schedule on today's calendar.
+8. **Break Window Work Chunking.** Auto-expanding tag windows must call `getAvailableWorkChunks(workWindows, breakWindows)` to split global work windows into sub-chunks around custom breaks, filling sub-chunks sequentially and jumping over break windows.
+9. **Untagged Task Isolation.** Untagged tasks (tasks without a time-windowed tag) are strictly restricted to non-tag hours (`(!s.matchingTagIds || s.matchingTagIds.size === 0)`), even if a tag window is empty of tasks.
 
 ---
 
@@ -312,6 +316,10 @@ After any DAL write operation, `AppState` checks if it should trigger a schedule
 |---------|---------------|-----------------|
 | Import `idb` in a component | Violates DAL abstraction | Import from `dal.js` only |
 | Use `new Date()` in engine code | Breaks purity; non-deterministic | Accept `now` as parameter |
+| Parse `'YYYY-MM-DD'` with `new Date('YYYY-MM-DD')` | Parses as UTC midnight, shifting day by -1 in negative timezones | Use `parseISOToLocalDate(date)` |
+| Pass raw `now` timestamp to `generateTimeSlots` | Omits morning slots for today; pushes morning tasks to tomorrow | Use `parseISOToLocalDate(nowObj)` as start |
+| Generate auto tag windows without break chunking | Overlaps break windows or truncates tag hours | Call `getAvailableWorkChunks(workWindows, breakWindows)` |
+| Allow untagged tasks in empty tag windows | Violates strict tag window isolation | Filter candidate slots with `(!s.matchingTagIds || s.matchingTagIds.size === 0)` |
 | Hard-code colors in component CSS | Breaks theming | Use `var(--token-name)` |
 | Fire events without `composed: true` | Events won't cross Shadow DOM | Always set `bubbles: true, composed: true` |
 | Put scheduling logic in a component | Violates engine isolation | All scheduling logic lives in `src/engine/` |
@@ -329,7 +337,7 @@ After any DAL write operation, `AppState` checks if it should trigger a schedule
 
 - **Recurring task accumulation** uses a counter on the parent, NOT separate task objects. The cap is configurable per-task (default from settings).
 - **Non-splittable tasks** that can't fit contiguously should be **force-split as a fallback** with an alert, not silently dropped.
-- **Auto-expanding tag windows** always respect the global work window as an upper bound. They expand within it, never beyond it.
+- **Auto-expanding tag windows** always respect global work windows and break windows. They stack dynamically across available work chunks in list order using a stateful `dayCursors` map (`dateStr -> HH:MM`).
 - **Tags with `time_window_mode: 'none'`** are pure labels — they don't affect scheduling.
 - **Dependency cycle detection** checks the combined hard+soft graph, not just one type.
 - **History pruning** runs inside `completeTask()`, not as a separate cron/timer.
