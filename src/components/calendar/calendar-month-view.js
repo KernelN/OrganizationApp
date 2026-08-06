@@ -1,6 +1,6 @@
 import { LitElement, html, css } from 'lit';
 import { sharedStyles } from '../../styles/shared-styles.js';
-import { formatDateISO } from '../../utils/date-utils.js';
+import { formatDateISO, parseISOToLocalDate } from '../../utils/date-utils.js';
 import { hexToRgba } from '../../utils/color-utils.js';
 
 const DAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
@@ -99,7 +99,7 @@ export class CronoCalendarMonthView extends LitElement {
   }
 
   getMonthDays() {
-    const curr = new Date(this.selectedDate);
+    const curr = parseISOToLocalDate(this.selectedDate);
     const year = curr.getFullYear();
     const month = curr.getMonth();
 

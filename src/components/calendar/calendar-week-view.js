@@ -1,6 +1,6 @@
 import { LitElement, html, css } from 'lit';
 import { sharedStyles } from '../../styles/shared-styles.js';
-import { getDayOfWeekIndex, getDayName, addDays, formatDateISO } from '../../utils/date-utils.js';
+import { getDayOfWeekIndex, getDayName, addDays, formatDateISO, parseISOToLocalDate } from '../../utils/date-utils.js';
 import { hexToRgba } from '../../utils/color-utils.js';
 import './calendar-event-block.js';
 
@@ -87,7 +87,7 @@ export class CronoCalendarWeekView extends LitElement {
   }
 
   getWeekDays() {
-    const curr = new Date(this.selectedDate);
+    const curr = parseISOToLocalDate(this.selectedDate);
     const dayIdx = getDayOfWeekIndex(curr);
     const monday = addDays(curr, -dayIdx);
 

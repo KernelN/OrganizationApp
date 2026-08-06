@@ -1,6 +1,6 @@
 import { LitElement, html, css } from 'lit';
 import { sharedStyles } from '../../styles/shared-styles.js';
-import { formatDateISO, addDays } from '../../utils/date-utils.js';
+import { formatDateISO, parseISOToLocalDate } from '../../utils/date-utils.js';
 import { appState, AppStateController } from '../../state/app-state.js';
 import './calendar-day-view.js';
 import './calendar-week-view.js';
@@ -24,6 +24,10 @@ export class CronoCalendarView extends LitElement {
         align-items: center;
         justify-content: space-between;
         gap: var(--space-md);
+        background: var(--bg-surface);
+        padding: var(--space-sm) var(--space-md);
+        border-radius: var(--radius-md);
+        border: 1px solid var(--border);
         flex-wrap: wrap;
       }
       .date-nav {
@@ -32,21 +36,24 @@ export class CronoCalendarView extends LitElement {
         gap: var(--space-sm);
       }
       .current-date-title {
-        font-size: 16px;
         font-weight: 600;
+        font-size: 15px;
         min-width: 180px;
       }
       .mode-toggle {
         display: flex;
-        background: var(--bg-surface);
+        background: var(--bg-secondary);
         padding: 2px;
-        border-radius: var(--radius-md);
+        border-radius: var(--radius-sm);
         border: 1px solid var(--border);
       }
       .mode-btn {
-        padding: 4px 12px;
+        background: transparent;
+        border: none;
+        padding: var(--space-xs) var(--space-sm);
         border-radius: var(--radius-sm);
-        font-size: 13px;
+        font-size: 12px;
+        cursor: pointer;
         font-weight: 500;
         color: var(--text-secondary);
       }
@@ -74,8 +81,7 @@ export class CronoCalendarView extends LitElement {
   }
 
   _navigate(offset) {
-    const [y, m, day] = (this.selectedDate || formatDateISO(new Date())).split('-').map(Number);
-    const d = new Date(y, m - 1, day);
+    const d = parseISOToLocalDate(this.selectedDate);
     if (this.mode === 'day') d.setDate(d.getDate() + offset);
     else if (this.mode === 'week') d.setDate(d.getDate() + offset * 7);
     else if (this.mode === 'month') d.setMonth(d.getMonth() + offset);
@@ -93,7 +99,7 @@ export class CronoCalendarView extends LitElement {
     const tags = appState.tags || [];
     const settings = appState.settings || {};
 
-    const formattedHeader = new Date(this.selectedDate).toLocaleDateString('en-US', {
+    const formattedHeader = parseISOToLocalDate(this.selectedDate).toLocaleDateString('en-US', {
       weekday: 'short',
       month: 'short',
       day: 'numeric',

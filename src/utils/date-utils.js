@@ -1,18 +1,31 @@
 const DAY_NAMES = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
 
 /**
+ * Safely converts a Date object, ISO date string ('YYYY-MM-DD'), or full ISO timestamp into a local Date object at 00:00:00.
+ * @param {Date|string} date 
+ * @returns {Date}
+ */
+export function parseISOToLocalDate(date) {
+  if (!date) return new Date();
+  if (date instanceof Date) return new Date(date.getFullYear(), date.getMonth(), date.getDate());
+  if (typeof date === 'string') {
+    const datePart = date.split('T')[0];
+    if (/^\d{4}-\d{2}-\d{2}$/.test(datePart)) {
+      const [y, m, d] = datePart.split('-').map(Number);
+      return new Date(y, m - 1, d);
+    }
+  }
+  const d = new Date(date);
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate());
+}
+
+/**
  * Returns 0-based day of week where 0 = Monday and 6 = Sunday.
  * @param {Date|string} date 
  * @returns {number} 0..6
  */
 export function getDayOfWeekIndex(date) {
-  let d;
-  if (typeof date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(date)) {
-    const [y, m, day] = date.split('-').map(Number);
-    d = new Date(y, m - 1, day);
-  } else {
-    d = new Date(date);
-  }
+  const d = parseISOToLocalDate(date);
   const jsDay = d.getDay(); // 0 = Sun, 1 = Mon ... 6 = Sat
   return (jsDay + 6) % 7;   // Convert to 0 = Mon ... 6 = Sun
 }
@@ -34,13 +47,7 @@ export function getDayName(date) {
  */
 export function parseHHMM(baseDate, timeStr) {
   const [hours, minutes] = timeStr.split(':').map(Number);
-  let d;
-  if (typeof baseDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(baseDate)) {
-    const [y, m, day] = baseDate.split('-').map(Number);
-    d = new Date(y, m - 1, day);
-  } else {
-    d = new Date(baseDate);
-  }
+  const d = parseISOToLocalDate(baseDate);
   d.setHours(hours, minutes, 0, 0);
   return d;
 }
@@ -75,12 +82,10 @@ export function formatHHMM(date) {
  */
 export function formatDateISO(date) {
   if (!date) return '';
-  let d;
   if (typeof date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(date)) {
     return date;
-  } else {
-    d = new Date(date);
   }
+  const d = new Date(date);
   if (isNaN(d.getTime())) return '';
   const year = d.getFullYear();
   const month = String(d.getMonth() + 1).padStart(2, '0');
@@ -119,13 +124,7 @@ export function addHours(date, hours) {
  * @returns {Date}
  */
 export function addDays(date, days) {
-  let d;
-  if (typeof date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(date)) {
-    const [y, m, day] = date.split('-').map(Number);
-    d = new Date(y, m - 1, day);
-  } else {
-    d = new Date(date);
-  }
+  const d = parseISOToLocalDate(date);
   d.setDate(d.getDate() + days);
   return d;
 }
