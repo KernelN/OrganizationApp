@@ -1,22 +1,25 @@
 # Cronograma - Online Setup & Cross-Platform Sync Guide
 
-This guide will walk you through hosting **Cronograma** online for free using GitHub Pages and configuring cross-platform backup sync (Desktop & Mobile) using GitHub API.
+This guide will walk you through hosting **Cronograma** online for free using GitHub Pages (via GitHub Actions) and configuring cross-platform backup sync (Desktop & Mobile) using GitHub API.
 
 ---
 
-## 🌐 Step 1: Enable GitHub Pages
+## 🌐 Step 1: Enable GitHub Pages Deployment (GitHub Actions)
 
 1. Go to your repository settings on GitHub: **[KernelN/OrganizationApp Settings](https://github.com/KernelN/OrganizationApp/settings/pages)**.
 2. In the left sidebar, click **Pages** (under *Code and automation*).
 3. Under **Build and deployment**:
-   - Change **Source** dropdown to **Deploy from a branch**.
-   - Select Branch: **`gh-pages`**
-   - Select Folder: **`/ (root)`**
-4. Click **Save**.
-5. Within ~15 seconds, your site will be live at:
-   👉 **`https://KernelN.github.io/OrganizationApp/`**
+   - Set **Source** dropdown to **GitHub Actions**.
 
-> **Note**: Whenever you update your code in the future, simply run `npm run deploy` in your project terminal to automatically re-build and push updates directly to GitHub Pages!
+### How Deployment Works:
+- **Automatic**: Every time you push code changes to the `main` branch, GitHub Actions will automatically run `.github/workflows/deploy.yml` to build Vite and deploy the live app.
+- **Manual Trigger**: To trigger a deployment manually at any time:
+  1. Go to the **Actions** tab at the top of your repository.
+  2. Click **Deploy to GitHub Pages** in the left menu.
+  3. Click **Run workflow** (top right) $\rightarrow$ Select `main` $\rightarrow$ Click **Run workflow**.
+
+4. Once deployed (~30 seconds), your app will be live at:
+   👉 **`https://KernelN.github.io/OrganizationApp/`**
 
 ---
 
@@ -24,8 +27,8 @@ This guide will walk you through hosting **Cronograma** online for free using Gi
 
 To keep your personal tasks, schedules, and settings separate from the main application source code:
 
-1. In your repository on GitHub, create a new branch named `backup-data` (or any branch name of your choice).
-   - *Quick way*: On GitHub, click the branch dropdown (`main`) $\rightarrow$ type `backup-data` $\rightarrow$ click **Create branch: backup-data**.
+1. In your repository on GitHub: **[KernelN/OrganizationApp](https://github.com/KernelN/OrganizationApp)**.
+2. Click the branch dropdown (`main`) $\rightarrow$ type `backup-data` $\rightarrow$ click **Create branch: backup-data**.
 
 ---
 

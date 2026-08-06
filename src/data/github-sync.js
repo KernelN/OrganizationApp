@@ -41,12 +41,17 @@ export class GitHubSync {
     if (!this.isConfigured()) return;
     try {
       const data = await dal.exportAll();
+      const sanitizedSettings = JSON.parse(JSON.stringify(data.settings || {}));
+      if (sanitizedSettings.github_sync) {
+        sanitizedSettings.github_sync.pat = ''; // Never push secret token to repository
+      }
+
       const files = {
         'tasks.json': JSON.stringify(data.tasks, null, 2),
         'tags.json': JSON.stringify(data.tags, null, 2),
         'dependencies.json': JSON.stringify(data.dependencies, null, 2),
         'time_logs.json': JSON.stringify(data.time_logs, null, 2),
-        'settings.json': JSON.stringify(data.settings, null, 2)
+        'settings.json': JSON.stringify(sanitizedSettings, null, 2)
       };
 
       const owner = this.config.repo_owner;
@@ -114,6 +119,13 @@ export class GitHubSync {
 
         const decodedContent = decodeURIComponent(escape(atob(fileData.content.replace(/\n/g, ''))));
         importedData[key] = JSON.parse(decodedContent);
+      }
+
+      // Preserve local PAT secret when restoring settings from GitHub
+      const currentSettings = await dal.getSettings();
+      if (importedData.settings && importedData.settings.github_sync) {
+        const currentPat = (currentSettings.github_sync && currentSettings.github_sync.pat) || '';
+        importedData.settings.github_sync.pat = currentPat;
       }
 
       await dal.importAll(importedData);
