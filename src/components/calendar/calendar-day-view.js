@@ -54,16 +54,24 @@ export class CronoCalendarDayView extends LitElement {
         left: 0;
         right: 0;
         background: repeating-linear-gradient(
-          45deg,
-          rgba(255, 255, 255, 0.03),
-          rgba(255, 255, 255, 0.03) 10px,
-          rgba(0, 0, 0, 0.1) 10px,
-          rgba(0, 0, 0, 0.1) 20px
+          -45deg,
+          rgba(239, 68, 68, 0.12),
+          rgba(239, 68, 68, 0.12) 10px,
+          rgba(239, 68, 68, 0.04) 10px,
+          rgba(239, 68, 68, 0.04) 20px
         );
         pointer-events: none;
         z-index: 1;
-        border-top: 1px dashed var(--border);
-        border-bottom: 1px dashed var(--border);
+        border-top: 1px dashed rgba(239, 68, 68, 0.5);
+        border-bottom: 1px dashed rgba(239, 68, 68, 0.5);
+        box-sizing: border-box;
+        padding: 4px var(--space-sm);
+        display: flex;
+        justify-content: flex-start;
+        align-items: center;
+        font-size: 11px;
+        font-weight: 600;
+        color: var(--alert-red);
       }
       .tag-window-strip {
         position: absolute;
@@ -137,13 +145,15 @@ export class CronoCalendarDayView extends LitElement {
             const [sH, sM] = bw.start.split(':').map(Number);
             const [eH, eM] = bw.end.split(':').map(Number);
             const topPx = (sH * 60 + sM);
-            const heightPx = ((eH * 60 + eM) - (sH * 60 + sM));
+            const heightPx = Math.max(16, ((eH * 60 + eM) - (sH * 60 + sM)));
             return html`
               <div
                 class="break-strip"
                 style="top: ${topPx}px; height: ${heightPx}px;"
                 title="Break Window: ${bw.start} - ${bw.end}"
-              ></div>
+              >
+                ☕ Break (${bw.start} - ${bw.end})
+              </div>
             `;
           })}
 

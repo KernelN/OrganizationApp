@@ -145,6 +145,7 @@ export class CronoCalendarView extends LitElement {
                 .tasks=${tasks}
                 .tags=${tags}
                 .tagWindowsComputed=${tagWindowsComputed}
+                .settings=${settings}
               ></crono-calendar-week-view>
             `
           : html`

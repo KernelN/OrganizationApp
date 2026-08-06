@@ -1,13 +1,13 @@
 import { LitElement, html, css } from 'lit';
 import { sharedStyles } from '../../styles/shared-styles.js';
-import { getDayOfWeekIndex, addDays, formatDateISO } from '../../utils/date-utils.js';
+import { getDayOfWeekIndex, getDayName, addDays, formatDateISO } from '../../utils/date-utils.js';
 import { hexToRgba } from '../../utils/color-utils.js';
 import './calendar-event-block.js';
 
 const DAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
 /**
- * <crono-calendar-week-view> — 7-column day grid week view with event blocks and tag windows.
+ * <crono-calendar-week-view> — 7-column day grid week view with event blocks, tag windows, and breaks.
  */
 export class CronoCalendarWeekView extends LitElement {
   static styles = [
@@ -72,7 +72,8 @@ export class CronoCalendarWeekView extends LitElement {
     blocks: { type: Array },
     tasks: { type: Array },
     tags: { type: Array },
-    tagWindowsComputed: { type: Array }
+    tagWindowsComputed: { type: Array },
+    settings: { type: Object }
   };
 
   constructor() {
@@ -82,6 +83,7 @@ export class CronoCalendarWeekView extends LitElement {
     this.tasks = [];
     this.tags = [];
     this.tagWindowsComputed = [];
+    this.settings = {};
   }
 
   getWeekDays() {
@@ -120,12 +122,23 @@ export class CronoCalendarWeekView extends LitElement {
           }).sort((a, b) => new Date(a.start).getTime() - new Date(b.start).getTime());
 
           const dayTagWindows = (this.tagWindowsComputed || []).filter(tw => tw.date === wd.dateStr);
+          const dayName = getDayName(wd.dateStr);
+          const breakWindows = (this.settings?.break_windows && this.settings.break_windows[dayName]) || [];
 
           return html`
             <div class="day-column">
-              ${dayTagWindows.length > 0
+              ${(dayTagWindows.length > 0 || breakWindows.length > 0)
                 ? html`
                     <div class="day-tag-windows">
+                      ${breakWindows.map(bw => html`
+                        <div
+                          class="tag-window-badge"
+                          style="background: rgba(239, 68, 68, 0.15); border-left: 3px solid var(--alert-red); color: var(--alert-red);"
+                          title="Break: ${bw.start} - ${bw.end}"
+                        >
+                          ☕ Break (${bw.start} - ${bw.end})
+                        </div>
+                      `)}
                       ${dayTagWindows.map(tw => {
                         const tag = this.tags.find(t => t.id === tw.tag_id) || { name: 'Tag', color: '#3B82F6' };
                         const bgRgba = hexToRgba(tag.color, 0.15);

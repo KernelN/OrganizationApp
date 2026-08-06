@@ -115,7 +115,7 @@ export function computeSchedule(tasks = [], tags = [], dependencies = [], settin
         ? Math.max(minDaily, totalHoursNeeded / activeDaysCount)
         : minDaily;
 
-      tagWindowMap[tag.id] = generateAutoWindows(assignedDays, requiredDailyHours, settings.work_windows || {}, startDate, endDate, dayCursors);
+      tagWindowMap[tag.id] = generateAutoWindows(assignedDays, requiredDailyHours, settings.work_windows || {}, settings.break_windows || {}, startDate, endDate, dayCursors);
     }
   }
 
@@ -231,6 +231,7 @@ export function computeSchedule(tasks = [], tags = [], dependencies = [], settin
       candidateSlots = allSlots.filter(s => {
         if (s.occupied) return false;
         if (s.tagReserved) return false;
+        if (s.matchingTagIds && s.matchingTagIds.size > 0) return false; // Untagged tasks can NEVER be placed inside tag windows!
         if (!task.ignore_breaks && s.is_break) return false;
         return true;
       });

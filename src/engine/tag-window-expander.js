@@ -1,4 +1,55 @@
-import { getDayOfWeekIndex, getDayName, formatDateISO, diffHours, addHours } from '../utils/date-utils.js';
+import { getDayOfWeekIndex, getDayName, formatDateISO, parseHHMMToMins, diffHours, addHours } from '../utils/date-utils.js';
+
+function formatMinsToHHMM(mins) {
+  const h = Math.floor(mins / 60);
+  const m = mins % 60;
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+}
+
+/**
+ * Splits global work windows by removing any overlapping break windows.
+ * @param {Array<{start: string, end: string}>} workWindows 
+ * @param {Array<{start: string, end: string}>} breakWindows 
+ * @returns {Array<{start: string, end: string}>} Clean non-overlapping work chunks
+ */
+export function getAvailableWorkChunks(workWindows = [], breakWindows = []) {
+  if (!Array.isArray(workWindows) || workWindows.length === 0) return [];
+  const sortedWork = [...workWindows].sort((a, b) => a.start.localeCompare(b.start));
+  const sortedBreaks = [...(breakWindows || [])].sort((a, b) => a.start.localeCompare(b.start));
+
+  const resultChunks = [];
+
+  for (const w of sortedWork) {
+    let currentStartMins = parseHHMMToMins(w.start);
+    const wEndMins = parseHHMMToMins(w.end);
+
+    for (const b of sortedBreaks) {
+      const bStartMins = parseHHMMToMins(b.start);
+      const bEndMins = parseHHMMToMins(b.end);
+
+      if (bStartMins >= wEndMins) break;
+      if (bEndMins <= currentStartMins) continue;
+
+      if (currentStartMins < bStartMins) {
+        resultChunks.push({
+          start: formatMinsToHHMM(currentStartMins),
+          end: formatMinsToHHMM(Math.min(wEndMins, bStartMins))
+        });
+      }
+
+      currentStartMins = Math.max(currentStartMins, bEndMins);
+    }
+
+    if (currentStartMins < wEndMins) {
+      resultChunks.push({
+        start: formatMinsToHHMM(currentStartMins),
+        end: formatMinsToHHMM(wEndMins)
+      });
+    }
+  }
+
+  return resultChunks;
+}
 
 /**
  * Expands fixed manual windows per day of week across date range [now, horizon].
@@ -24,16 +75,17 @@ export function expandManualWindows(timeWindows = {}, now, horizon) {
 }
 
 /**
- * Generates auto-expanding tag windows clamped to global work window and stacked dynamically.
+ * Generates auto-expanding tag windows clamped to global work window and respecting break windows.
  * @param {Array<number>} assignedDays - 0=Mon, 6=Sun
  * @param {number} requiredDailyHours 
  * @param {Object} workWindows 
+ * @param {Object} breakWindows 
  * @param {Date|string} startDate 
  * @param {Date|string} endDate 
  * @param {Object} dayCursors - Map of dateStr -> current start HH:MM string for dynamic stacking
  * @returns {Object} Map date_string -> [{start, end}]
  */
-export function generateAutoWindows(assignedDays = [], requiredDailyHours = 1, workWindows = {}, startDate, endDate, dayCursors = {}) {
+export function generateAutoWindows(assignedDays = [], requiredDailyHours = 1, workWindows = {}, breakWindows = {}, startDate, endDate, dayCursors = {}) {
   const result = {};
   const curr = new Date(startDate);
   const end = new Date(endDate);
@@ -42,29 +94,28 @@ export function generateAutoWindows(assignedDays = [], requiredDailyHours = 1, w
     const dayIdx = getDayOfWeekIndex(curr);
     if (assignedDays.includes(dayIdx)) {
       const dayName = getDayName(curr);
-      const globalWindows = workWindows[dayName] || [];
+      const rawWorkWindows = workWindows[dayName] || [];
+      const rawBreakWindows = breakWindows[dayName] || [];
 
-      if (globalWindows.length > 0) {
+      const availableChunks = getAvailableWorkChunks(rawWorkWindows, rawBreakWindows);
+
+      if (availableChunks.length > 0) {
         const dateStr = formatDateISO(curr);
         const allocatedWindows = [];
         let remaining = requiredDailyHours;
 
-        const sortedGlobal = [...globalWindows].sort((a, b) => a.start.localeCompare(b.start));
-
-        for (const w of sortedGlobal) {
-          // Current start time for this tag on this day (defaults to w.start or current dayCursor if after w.start)
-          let effectiveStart = w.start;
+        for (const chunk of availableChunks) {
+          let effectiveStart = chunk.start;
           if (dayCursors[dateStr] && dayCursors[dateStr] > effectiveStart) {
             effectiveStart = dayCursors[dateStr];
           }
 
-          // If current cursor is past this work window's end, skip
-          if (effectiveStart >= w.end) continue;
+          if (effectiveStart >= chunk.end) continue;
 
-          const availableHoursInWindow = diffHours(`2000-01-01T${effectiveStart}:00Z`, `2000-01-01T${w.end}:00Z`);
-          if (availableHoursInWindow <= 0) continue;
+          const availableHoursInChunk = diffHours(`2000-01-01T${effectiveStart}:00Z`, `2000-01-01T${chunk.end}:00Z`);
+          if (availableHoursInChunk <= 0) continue;
 
-          const take = Math.min(remaining, availableHoursInWindow);
+          const take = Math.min(remaining, availableHoursInChunk);
 
           const wStartObj = new Date(`2000-01-01T${effectiveStart}:00Z`);
           const wEndObj = addHours(wStartObj, take);
@@ -73,7 +124,6 @@ export function generateAutoWindows(assignedDays = [], requiredDailyHours = 1, w
           allocatedWindows.push({ start: effectiveStart, end: endHHMM });
           remaining -= take;
 
-          // Update day cursor so the next auto-expanding tag stacks right after this one
           dayCursors[dateStr] = endHHMM;
 
           if (remaining <= 0) break;

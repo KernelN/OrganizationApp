@@ -6,7 +6,13 @@ const DAY_NAMES = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'satu
  * @returns {number} 0..6
  */
 export function getDayOfWeekIndex(date) {
-  const d = new Date(date);
+  let d;
+  if (typeof date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(date)) {
+    const [y, m, day] = date.split('-').map(Number);
+    d = new Date(y, m - 1, day);
+  } else {
+    d = new Date(date);
+  }
   const jsDay = d.getDay(); // 0 = Sun, 1 = Mon ... 6 = Sat
   return (jsDay + 6) % 7;   // Convert to 0 = Mon ... 6 = Sun
 }
@@ -28,7 +34,13 @@ export function getDayName(date) {
  */
 export function parseHHMM(baseDate, timeStr) {
   const [hours, minutes] = timeStr.split(':').map(Number);
-  const d = new Date(baseDate);
+  let d;
+  if (typeof baseDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(baseDate)) {
+    const [y, m, day] = baseDate.split('-').map(Number);
+    d = new Date(y, m - 1, day);
+  } else {
+    d = new Date(baseDate);
+  }
   d.setHours(hours, minutes, 0, 0);
   return d;
 }
@@ -63,7 +75,12 @@ export function formatHHMM(date) {
  */
 export function formatDateISO(date) {
   if (!date) return '';
-  const d = new Date(date);
+  let d;
+  if (typeof date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(date)) {
+    return date;
+  } else {
+    d = new Date(date);
+  }
   if (isNaN(d.getTime())) return '';
   const year = d.getFullYear();
   const month = String(d.getMonth() + 1).padStart(2, '0');
@@ -102,7 +119,13 @@ export function addHours(date, hours) {
  * @returns {Date}
  */
 export function addDays(date, days) {
-  const d = new Date(date);
+  let d;
+  if (typeof date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(date)) {
+    const [y, m, day] = date.split('-').map(Number);
+    d = new Date(y, m - 1, day);
+  } else {
+    d = new Date(date);
+  }
   d.setDate(d.getDate() + days);
   return d;
 }
@@ -151,7 +174,7 @@ export function generateTimeSlots(now, horizon, workWindows = {}, breakWindows =
       const isBreak = dayBreakWindows.some(b => {
         const bStartMins = parseHHMMToMins(b.start);
         const bEndMins = parseHHMMToMins(b.end);
-        return currMins >= bStartMins && nextMins <= bEndMins;
+        return currMins < bEndMins && nextMins > bStartMins;
       });
 
       slots.push({
