@@ -143,6 +143,8 @@ export class CronoCalendarView extends LitElement {
                 .selectedDate=${this.selectedDate}
                 .blocks=${blocks}
                 .tasks=${tasks}
+                .tags=${tags}
+                .tagWindowsComputed=${tagWindowsComputed}
               ></crono-calendar-week-view>
             `
           : html`
@@ -150,6 +152,8 @@ export class CronoCalendarView extends LitElement {
                 .selectedDate=${this.selectedDate}
                 .blocks=${blocks}
                 .tasks=${tasks}
+                .tags=${tags}
+                .tagWindowsComputed=${tagWindowsComputed}
                 @crono-date-select=${(e) => {
                   this.selectedDate = e.detail.date;
                   this.mode = 'day';

@@ -178,13 +178,12 @@ export class CronoTagForm extends LitElement {
 
         <div class="row">
           <div class="form-group">
-            <label>Total Time Budget (Hours)</label>
+            <label>Start Date</label>
             <input
-              type="number"
-              step="0.5"
+              type="date"
               class="crono-input"
-              .value=${this.formData.duration_hours || ''}
-              @input=${(e) => (this.formData.duration_hours = e.target.value)}
+              .value=${this.formData.start_date || ''}
+              @input=${(e) => (this.formData.start_date = e.target.value)}
             />
           </div>
 
@@ -193,8 +192,19 @@ export class CronoTagForm extends LitElement {
             <input
               type="date"
               class="crono-input"
-              .value=${this.formData.deadline}
+              .value=${this.formData.deadline || ''}
               @input=${(e) => (this.formData.deadline = e.target.value)}
+            />
+          </div>
+
+          <div class="form-group">
+            <label>Time Budget (h)</label>
+            <input
+              type="number"
+              step="0.5"
+              class="crono-input"
+              .value=${this.formData.duration_hours || ''}
+              @input=${(e) => (this.formData.duration_hours = e.target.value)}
             />
           </div>
         </div>

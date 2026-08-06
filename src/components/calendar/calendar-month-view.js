@@ -1,11 +1,12 @@
 import { LitElement, html, css } from 'lit';
 import { sharedStyles } from '../../styles/shared-styles.js';
 import { formatDateISO } from '../../utils/date-utils.js';
+import { hexToRgba } from '../../utils/color-utils.js';
 
 const DAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
 /**
- * <crono-calendar-month-view> — Month view with colored task dots.
+ * <crono-calendar-month-view> — Month view with task dots and tag window chips.
  */
 export class CronoCalendarMonthView extends LitElement {
   static styles = [
@@ -62,13 +63,30 @@ export class CronoCalendarMonthView extends LitElement {
         height: 8px;
         border-radius: 50%;
       }
+      .tag-chips {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+        margin-top: 2px;
+      }
+      .tag-chip {
+        font-size: 10px;
+        font-weight: 600;
+        padding: 1px 4px;
+        border-radius: 2px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
     `
   ];
 
   static properties = {
     selectedDate: { type: String },
     blocks: { type: Array },
-    tasks: { type: Array }
+    tasks: { type: Array },
+    tags: { type: Array },
+    tagWindowsComputed: { type: Array }
   };
 
   constructor() {
@@ -76,6 +94,8 @@ export class CronoCalendarMonthView extends LitElement {
     this.selectedDate = formatDateISO(new Date());
     this.blocks = [];
     this.tasks = [];
+    this.tags = [];
+    this.tagWindowsComputed = [];
   }
 
   getMonthDays() {
@@ -115,12 +135,35 @@ export class CronoCalendarMonthView extends LitElement {
             const bDateStr = formatDateISO(new Date(b.start));
             return bDateStr === d.dateStr || b.start.startsWith(d.dateStr);
           });
+          const dayTagWindows = (this.tagWindowsComputed || []).filter(tw => tw.date === d.dateStr);
+
           return html`
             <div
               class="day-cell ${d.isCurrentMonth ? '' : 'other-month'}"
               @click=${() => this.dispatchEvent(new CustomEvent('crono-date-select', { detail: { date: d.dateStr }, bubbles: true, composed: true }))}
             >
               <span class="day-num">${d.dayNum}</span>
+
+              ${dayTagWindows.length > 0
+                ? html`
+                    <div class="tag-chips">
+                      ${dayTagWindows.map(tw => {
+                        const tag = this.tags.find(t => t.id === tw.tag_id) || { name: 'Tag', color: '#3B82F6' };
+                        const bgRgba = hexToRgba(tag.color, 0.2);
+                        return html`
+                          <div
+                            class="tag-chip"
+                            style="background: ${bgRgba}; border-left: 2px solid ${tag.color}; color: ${tag.color};"
+                            title="${tag.name}"
+                          >
+                            🏷️ ${tag.name}
+                          </div>
+                        `;
+                      })}
+                    </div>
+                  `
+                : ''}
+
               <div class="dots">
                 ${dayBlocks.slice(0, 5).map(b => {
                   const t = this.tasks.find(tk => tk.id === b.task_id);

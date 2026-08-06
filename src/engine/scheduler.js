@@ -70,27 +70,56 @@ export function computeSchedule(tasks = [], tags = [], dependencies = [], settin
   // ── PHASE 2: Compute Tag Time Windows ──────────────────
   const tagWindowMap = {};
   const tagWindowsComputedList = [];
+  const dayCursors = {};
 
+  // First pass: process manual windows to seed dayCursors
   for (const tag of tags) {
-    if (!tag.time_window_mode || tag.time_window_mode === 'none') continue;
-
     if (tag.time_window_mode === 'manual') {
       tagWindowMap[tag.id] = expandManualWindows(tag.time_windows || {}, now, horizon);
-    } else if (tag.time_window_mode === 'auto' && tag.auto_expand_config) {
+      for (const [dateStr, winList] of Object.entries(tagWindowMap[tag.id])) {
+        for (const w of winList) {
+          if (!dayCursors[dateStr] || w.end > dayCursors[dateStr]) {
+            dayCursors[dateStr] = w.end;
+          }
+        }
+      }
+    }
+  }
+
+  // Second pass: process auto-expanding windows dynamically stacked
+  for (const tag of tags) {
+    if (!tag.time_window_mode || tag.time_window_mode === 'none' || tag.time_window_mode === 'manual') continue;
+
+    if (tag.time_window_mode === 'auto' && tag.auto_expand_config) {
       const tagTasks = tasks.filter(t => Array.isArray(t.tag_ids) && t.tag_ids.includes(tag.id) && t.status === 'active' && !t.manual_schedule);
-      const totalHoursNeeded = tagTasks.reduce((sum, t) => sum + (t.duration_hours || 0), 0);
+      const tagTaskHours = tagTasks.reduce((sum, t) => sum + (t.duration_hours || 0), 0);
+      const tagBudgetHours = typeof tag.duration_hours === 'number' && tag.duration_hours > 0 ? Number(tag.duration_hours) : 0;
+      const totalHoursNeeded = Math.max(tagTaskHours, tagBudgetHours);
 
       const assignedDays = tag.auto_expand_config.assigned_days || [0, 1, 2, 3, 4];
-      const minDaily = tag.auto_expand_config.minimum_daily_hours || 1.0;
+      const minDaily = typeof tag.auto_expand_config.minimum_daily_hours === 'number' ? tag.auto_expand_config.minimum_daily_hours : 1.0;
       const startDate = tag.start_date && new Date(tag.start_date) > nowObj ? tag.start_date : now;
       const endDate = tag.deadline || horizon;
 
-      const daysInRange = Math.max(1, Math.ceil(diffHours(startDate, endDate) / 24));
-      const requiredDailyHours = Math.max(minDaily, totalHoursNeeded / daysInRange);
+      // Count assigned active days in range
+      let activeDaysCount = 0;
+      const tempCurr = new Date(startDate);
+      const tempEnd = new Date(endDate);
+      while (tempCurr.getTime() <= tempEnd.getTime()) {
+        const dayIdx = (tempCurr.getDay() + 6) % 7;
+        if (assignedDays.includes(dayIdx)) activeDaysCount++;
+        tempCurr.setDate(tempCurr.getDate() + 1);
+      }
 
-      tagWindowMap[tag.id] = generateAutoWindows(assignedDays, requiredDailyHours, settings.work_windows || {}, startDate, endDate);
+      const requiredDailyHours = activeDaysCount > 0 && totalHoursNeeded > 0
+        ? Math.max(minDaily, totalHoursNeeded / activeDaysCount)
+        : minDaily;
+
+      tagWindowMap[tag.id] = generateAutoWindows(assignedDays, requiredDailyHours, settings.work_windows || {}, startDate, endDate, dayCursors);
     }
+  }
 
+  for (const tag of tags) {
     if (tagWindowMap[tag.id]) {
       for (const [date, windows] of Object.entries(tagWindowMap[tag.id])) {
         tagWindowsComputedList.push({ tag_id: tag.id, date, windows });

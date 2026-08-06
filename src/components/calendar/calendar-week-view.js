@@ -1,12 +1,13 @@
 import { LitElement, html, css } from 'lit';
 import { sharedStyles } from '../../styles/shared-styles.js';
 import { getDayOfWeekIndex, addDays, formatDateISO } from '../../utils/date-utils.js';
+import { hexToRgba } from '../../utils/color-utils.js';
 import './calendar-event-block.js';
 
 const DAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
 /**
- * <crono-calendar-week-view> — 7-column day grid week view.
+ * <crono-calendar-week-view> — 7-column day grid week view with event blocks and tag windows.
  */
 export class CronoCalendarWeekView extends LitElement {
   static styles = [
@@ -48,13 +49,30 @@ export class CronoCalendarWeekView extends LitElement {
         text-align: center;
         margin-bottom: var(--space-xs);
       }
+      .day-tag-windows {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        margin-bottom: var(--space-xs);
+      }
+      .tag-window-badge {
+        font-size: 11px;
+        font-weight: 600;
+        padding: 3px 6px;
+        border-radius: var(--radius-sm);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
     `
   ];
 
   static properties = {
     selectedDate: { type: String },
     blocks: { type: Array },
-    tasks: { type: Array }
+    tasks: { type: Array },
+    tags: { type: Array },
+    tagWindowsComputed: { type: Array }
   };
 
   constructor() {
@@ -62,6 +80,8 @@ export class CronoCalendarWeekView extends LitElement {
     this.selectedDate = formatDateISO(new Date());
     this.blocks = [];
     this.tasks = [];
+    this.tags = [];
+    this.tagWindowsComputed = [];
   }
 
   getWeekDays() {
@@ -98,8 +118,31 @@ export class CronoCalendarWeekView extends LitElement {
             const bDateStr = formatDateISO(new Date(b.start));
             return bDateStr === wd.dateStr || b.start.startsWith(wd.dateStr);
           }).sort((a, b) => new Date(a.start).getTime() - new Date(b.start).getTime());
+
+          const dayTagWindows = (this.tagWindowsComputed || []).filter(tw => tw.date === wd.dateStr);
+
           return html`
             <div class="day-column">
+              ${dayTagWindows.length > 0
+                ? html`
+                    <div class="day-tag-windows">
+                      ${dayTagWindows.map(tw => {
+                        const tag = this.tags.find(t => t.id === tw.tag_id) || { name: 'Tag', color: '#3B82F6' };
+                        const bgRgba = hexToRgba(tag.color, 0.15);
+                        return (tw.windows || []).map(w => html`
+                          <div
+                            class="tag-window-badge"
+                            style="background: ${bgRgba}; border-left: 3px solid ${tag.color}; color: ${tag.color};"
+                            title="${tag.name}: ${w.start} - ${w.end}"
+                          >
+                            🏷️ ${tag.name} (${w.start} - ${w.end})
+                          </div>
+                        `);
+                      })}
+                    </div>
+                  `
+                : ''}
+
               ${dayBlocks.map((block) => {
                 const task = this.tasks.find((t) => t.id === block.task_id) || { title: 'Task', color: '#6366F1' };
                 return html`
