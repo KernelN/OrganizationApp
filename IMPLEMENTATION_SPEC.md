@@ -178,7 +178,7 @@ sequenceDiagram
 
 ## 2. Data Schemas (JSON Specification)
 
-> All schemas use ULID for primary keys. All timestamps are ISO 8601 strings in UTC. All durations are in **minutes** (integer) for granularity alignment with the 15-min default slot size.
+> All schemas use ULID for primary keys. All timestamps are ISO 8601 strings in UTC. All durations, budgets, and alert windows are in **decimal hours** (floating-point number) for flexibility.
 
 ### 2.1 `tasks` (IndexedDB Object Store / `tasks.json`)
 
@@ -194,8 +194,8 @@ sequenceDiagram
     "priority":           { "type": "integer", "minimum": 0, "default": 0, "description": "Higher = more important" },
     "tag_ids":            { "type": "array", "items": { "type": "string" }, "default": [], "description": "Associated Tag ULIDs. At most ONE tag with a time window." },
     "deadline":           { "type": ["string", "null"], "format": "date-time", "default": null },
-    "alert_window_minutes": { "type": ["integer", "null"], "minimum": 0, "default": null, "description": "Minutes before deadline when Orange Alert activates" },
-    "duration_minutes":   { "type": "integer", "minimum": 1, "description": "Total estimated duration in minutes" },
+    "alert_window_hours": { "type": ["number", "null"], "minimum": 0, "default": null, "description": "Hours before deadline when Orange Alert activates (supports decimal days/hours)" },
+    "duration_hours":     { "type": "number", "minimum": 0.01, "description": "Total estimated duration in hours (decimal)" },
     "splittable":         { "type": "boolean", "default": true, "description": "Can this task be split across non-contiguous slots?" },
     "ignore_breaks":      { "type": "boolean", "default": false, "description": "If true, can be scheduled during break hours" },
 
@@ -232,7 +232,7 @@ sequenceDiagram
     "parent_task_id":     { "type": ["string", "null"], "default": null, "description": "If this is a recurring instance, points to the recurrence template task" },
     "accumulated_count":  { "type": "integer", "default": 0, "description": "For accumulating recurring tasks: how many missed instances this represents (counter on parent)" }
   },
-  "required": ["id", "title", "duration_minutes", "priority", "created_at", "updated_at"]
+  "required": ["id", "title", "duration_hours", "priority", "created_at", "updated_at"]
 }
 ```
 
@@ -246,7 +246,7 @@ sequenceDiagram
     "id":                     { "type": "string", "description": "ULID" },
     "name":                   { "type": "string", "minLength": 1, "maxLength": 100 },
     "color":                  { "type": "string", "pattern": "^#[0-9A-Fa-f]{6}$" },
-    "duration_minutes":       { "type": ["integer", "null"], "minimum": 0, "default": null, "description": "Total time budget for this Tag (null = no budget)" },
+    "duration_hours":         { "type": ["number", "null"], "minimum": 0, "default": null, "description": "Total time budget for this Tag in hours (null = no budget)" },
     "deadline":               { "type": ["string", "null"], "format": "date-time", "default": null },
     "start_date":             { "type": ["string", "null"], "format": "date-time", "default": null },
 
@@ -274,7 +274,7 @@ sequenceDiagram
       "default": null,
       "description": "Only used when time_window_mode = 'auto'",
       "properties": {
-        "minimum_daily_minutes": { "type": "integer", "minimum": 0, "default": 60, "description": "User-defined baseline daily allocation" },
+        "minimum_daily_hours":   { "type": "number", "minimum": 0, "default": 1.0, "description": "User-defined baseline daily allocation in hours" },
         "assigned_days":         { "type": "array", "items": { "type": "integer", "minimum": 0, "maximum": 6 }, "description": "0=Mon, 6=Sun. Days this tag is active." }
       }
     },
@@ -330,16 +330,16 @@ sequenceDiagram
   "properties": {
     "id":              { "type": "string", "description": "ULID" },
     "task_id":         { "type": "string" },
-    "logged_minutes":  { "type": "integer", "minimum": 1 },
+    "logged_hours":    { "type": "number", "minimum": 0.01 },
     "notes":           { "type": "string", "maxLength": 500, "default": "" },
     "logged_at":       { "type": "string", "format": "date-time", "description": "When this entry was logged" }
   },
-  "required": ["id", "task_id", "logged_minutes", "logged_at"]
+  "required": ["id", "task_id", "logged_hours", "logged_at"]
 }
 ```
 
 > [!IMPORTANT]
-> Time logs are **purely informational**. They do NOT reduce `duration_minutes`, do NOT trigger auto-completion, and are NOT read by the Cronograma engine.
+> Time logs are **purely informational**. They do NOT reduce `duration_hours`, do NOT trigger auto-completion, and are NOT read by the Cronograma engine.
 
 ### 2.5 `settings` (IndexedDB Object Store / `settings.json`)
 
@@ -468,7 +468,7 @@ sequenceDiagram
           "level":       { "type": "string", "enum": ["orange", "red"] },
           "message":     { "type": "string" },
           "deadline":    { "type": "string", "format": "date-time" },
-          "deficit_minutes": { "type": "integer", "description": "For red alerts: how many minutes short of deadline" }
+          "deficit_hours": { "type": "number", "description": "For red alerts: how many hours short of deadline" }
         }
       }
     },
@@ -526,11 +526,11 @@ FUNCTION computeSchedule(tasks, tags, dependencies, settings, now):
     now + settings.scheduling_horizon_days
   )
   
-  slotSize = settings.slot_granularity_minutes
+  slotSizeHours = settings.slot_granularity_minutes / 60
   
   // Generate all available time slots from `now` to `horizon`
-  allSlots = generateTimeSlots(now, horizon, settings.work_windows, settings.break_windows, slotSize)
-  // Each slot: { start: DateTime, end: DateTime, dayOfWeek: int }
+  allSlots = generateTimeSlots(now, horizon, settings.work_windows, settings.break_windows, slotSizeHours)
+  // Each slot: { start: DateTime, end: DateTime, dayOfWeek: int, duration_hours: float }
 
   // ─── PHASE 1: Reserve Locked Blocks ─────────────────────
   lockedBlocks = []
@@ -550,19 +550,19 @@ FUNCTION computeSchedule(tasks, tags, dependencies, settings, now):
     ELSE IF tag.time_window_mode == "auto":
       // Calculate required daily allocation
       tagTasks = tasks.filter(t => t.tag_ids.includes(tag.id) AND t.status == "active" AND t.manual_schedule == null)
-      totalMinutesNeeded = sum(tagTasks.map(t => t.duration_minutes))
+      totalHoursNeeded = sum(tagTasks.map(t => t.duration_hours))
       
       availableDays = countAssignedDaysInRange(tag.auto_expand_config.assigned_days, 
                                                  max(tag.start_date, now), 
                                                  tag.deadline ?? horizon)
       
-      minDailyMinutes = tag.auto_expand_config.minimum_daily_minutes
-      requiredDailyMinutes = max(minDailyMinutes, ceil(totalMinutesNeeded / availableDays))
+      minDailyHours = tag.auto_expand_config.minimum_daily_hours
+      requiredDailyHours = max(minDailyHours, totalHoursNeeded / availableDays)
       
       // Clamp to global work window available hours for that day
       tagWindowMap[tag.id] = generateAutoWindows(
         tag.auto_expand_config.assigned_days,
-        requiredDailyMinutes,
+        requiredDailyHours,
         settings.work_windows,
         max(tag.start_date, now),
         tag.deadline ?? horizon
@@ -596,7 +596,7 @@ FUNCTION computeSchedule(tasks, tags, dependencies, settings, now):
   
   FOR task IN schedulableTasks:
     task._alert_level = computeAlertLevel(task, now, allSlots, tagWindowMap)
-    task._slack = computeSlack(task, now)  // deadline - now - duration_minutes
+    task._slack = computeSlack(task, now)  // deadline - now - duration_hours
     task._dep_order = 0  // Set in Phase 6
   
   // ─── PHASE 6: Resolve Dependencies (Topological Sort) ──
@@ -630,7 +630,7 @@ FUNCTION computeSchedule(tasks, tags, dependencies, settings, now):
     IF a._slack != b._slack:
       RETURN a._slack - b._slack  // Lower slack (more urgent) first
     
-    RETURN a.duration_minutes - b.duration_minutes  // Shorter first
+    RETURN a.duration_hours - b.duration_hours  // Shorter first
   })
 
   // ─── PHASE 8: Allocate Slots (Greedy Fill) ──────────────
@@ -664,7 +664,7 @@ FUNCTION computeSchedule(tasks, tags, dependencies, settings, now):
           availableSlots = availableSlots.filter(s => s.start >= lastSlotOf(prereq))
 
     // Allocate
-    slotsNeeded = ceil(task.duration_minutes / slotSize)
+    slotsNeeded = ceil(task.duration_hours / slotSizeHours)
     
     IF task.splittable:
       // Greedily fill earliest available slots
@@ -680,8 +680,8 @@ FUNCTION computeSchedule(tasks, tags, dependencies, settings, now):
     IF allocated.length < slotsNeeded:
       // Not enough slots — this task cannot be fully scheduled
       // Generate RED alert
-      deficit = (slotsNeeded - allocated.length) * slotSize
-      alerts.push({ task_id: task.id, level: "red", deficit_minutes: deficit })
+      deficit = (slotsNeeded - allocated.length) * slotSizeHours
+      alerts.push({ task_id: task.id, level: "red", deficit_hours: deficit })
 
     // Mark allocated slots as occupied and create blocks
     FOR slot IN allocated:
@@ -713,13 +713,13 @@ FUNCTION computeAlertLevel(task, now, allSlots, tagWindowMap):
   IF task.deadline == null:
     RETURN "none"
   
-  availableMinutes = countAvailableMinutes(now, task.deadline, allSlots, task, tagWindowMap)
+  availableHours = countAvailableHours(now, task.deadline, allSlots, task, tagWindowMap)
   
-  IF availableMinutes < task.duration_minutes:
+  IF availableHours < task.duration_hours:
     RETURN "red"   // Cannot fit before deadline
   
-  IF task.alert_window_minutes != null:
-    alertStart = task.deadline - task.alert_window_minutes (as Duration)
+  IF task.alert_window_hours != null:
+    alertStart = task.deadline - task.alert_window_hours (as Duration)
     IF now >= alertStart:
       RETURN "orange"
   
@@ -766,7 +766,7 @@ FUNCTION detectCycle(graph, newEdge):
 ### 3.5 Auto-Expanding Tag Windows
 
 ```
-FUNCTION generateAutoWindows(assignedDays, requiredDailyMinutes, workWindows, startDate, endDate):
+FUNCTION generateAutoWindows(assignedDays, requiredDailyHours, workWindows, startDate, endDate):
   result = Map<date_string, [{start, end}]>
   
   FOR date IN dateRange(startDate, endDate):
@@ -779,20 +779,20 @@ FUNCTION generateAutoWindows(assignedDays, requiredDailyMinutes, workWindows, st
     IF globalWindows.length == 0:
       CONTINUE
     
-    // Calculate total available minutes in global windows
-    totalGlobalMinutes = sum(globalWindows.map(w => diffMinutes(w.start, w.end)))
+    // Calculate total available hours in global windows
+    totalGlobalHours = sum(globalWindows.map(w => diffHours(w.start, w.end)))
     
     // Clamp required to available
-    dailyAllocation = min(requiredDailyMinutes, totalGlobalMinutes)
+    dailyAllocation = min(requiredDailyHours, totalGlobalHours)
     
-    // Distribute allocation across global windows proportionally
-    // Strategy: fill windows from earliest, consuming `dailyAllocation` minutes
+    // Distribute allocation across global windows
+    // Strategy: fill windows from earliest, consuming `dailyAllocation` hours
     allocatedWindows = []
     remaining = dailyAllocation
     FOR window IN globalWindows (sorted by start):
-      windowMinutes = diffMinutes(window.start, window.end)
-      take = min(remaining, windowMinutes)
-      allocatedWindows.push({ start: window.start, end: addMinutes(window.start, take) })
+      windowHours = diffHours(window.start, window.end)
+      take = min(remaining, windowHours)
+      allocatedWindows.push({ start: window.start, end: addHours(window.start, take) })
       remaining -= take
       IF remaining <= 0: BREAK
     
@@ -832,7 +832,7 @@ FUNCTION generateRecurringInstances(task, now, horizon):
     missedCount = min(missedCount, rule.accumulation_cap)
     // Add accumulated duration to the NEXT instance (or create a catch-up instance)
     IF instances.length > 0:
-      instances[0].duration_minutes *= (1 + missedCount)
+      instances[0].duration_hours *= (1 + missedCount)
       instances[0].accumulated_count = missedCount
   
   RETURN instances
@@ -1232,9 +1232,9 @@ Fields (in order of appearance):
 3. **Color** — color picker (hex, with preset swatches)
 4. **Priority** — integer stepper (0-10, with labels: 0=Low, 5=Medium, 10=Critical)
 5. **Tags** — multi-select chip picker (from existing tags). Validation: at most 1 tag with a time window.
-6. **Duration** — hours:minutes input (required)
+6. **Duration** — hours:minutes input (required, saved as decimal hours)
 7. **Deadline** — date-time picker (optional)
-8. **Alert Window** — duration input (e.g., "2 days before deadline"). Only visible if deadline is set.
+8. **Alert Window** — duration input (e.g., "2 days before deadline", saved as decimal hours). Only visible if deadline is set.
 9. **Splittable** — toggle switch (default: from settings)
 10. **Ignore Breaks** — toggle switch (default: false)
 11. **Recurrence** — expandable section:
@@ -1245,7 +1245,7 @@ Fields (in order of appearance):
     - Accumulation cap (if accumulates)
 12. **Dependencies** — searchable multi-select. Each shows task title + (Hard/Soft) toggle.
 13. **Time Tracking** — section for logging hours (separate from scheduling):
-    - Log entry: minutes input + optional note + "Add" button
+    - Log entry: hours:minutes input (saved as decimal hours) + optional note + "Add" button
     - History list of past logs
 
 #### 5.3.4 Tag Form
