@@ -6,7 +6,7 @@ import { CycleDetectedError } from '../utils/errors.js';
 import { detectCycleFromDependencies } from '../engine/dependency-resolver.js';
 
 const DB_NAME = 'cronograma_db';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 const SETTINGS_KEY = 'user_settings';
 
 export const DEFAULT_SETTINGS = {
@@ -56,7 +56,7 @@ export class IndexedDBAdapter extends DataAccessLayer {
 
   async _initDB() {
     return openDB(DB_NAME, DB_VERSION, {
-      upgrade(db) {
+      upgrade(db, oldVersion) {
         // Tasks store
         if (!db.objectStoreNames.contains('tasks')) {
           const taskStore = db.createObjectStore('tasks', { keyPath: 'id' });
@@ -87,9 +87,10 @@ export class IndexedDBAdapter extends DataAccessLayer {
         }
 
         // Settings store
-        if (!db.objectStoreNames.contains('settings')) {
-          db.createObjectStore('settings', { keyPath: 'key' });
+        if (db.objectStoreNames.contains('settings')) {
+          db.deleteObjectStore('settings');
         }
+        db.createObjectStore('settings', { keyPath: 'key' });
       }
     });
   }
@@ -376,8 +377,9 @@ export class IndexedDBAdapter extends DataAccessLayer {
     const db = await this.dbPromise;
     const settings = await db.get('settings', SETTINGS_KEY);
     if (!settings) {
-      await db.put('settings', DEFAULT_SETTINGS);
-      return DEFAULT_SETTINGS;
+      const defaultWithKey = { ...DEFAULT_SETTINGS, key: SETTINGS_KEY };
+      await db.put('settings', defaultWithKey);
+      return defaultWithKey;
     }
     return settings;
   }

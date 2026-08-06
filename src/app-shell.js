@@ -1,5 +1,4 @@
 import { LitElement, html, css } from 'lit';
-import { Router } from '@lit-labs/router';
 import { sharedStyles } from './styles/shared-styles.js';
 import { appState, AppStateController } from './state/app-state.js';
 import { scheduleState } from './state/schedule-state.js';
@@ -172,7 +171,8 @@ export class AppShell extends LitElement {
 
   static properties = {
     collapsed: { type: Boolean },
-    mobileDrawerOpen: { type: Boolean }
+    mobileDrawerOpen: { type: Boolean },
+    currentHash: { type: String }
   };
 
   constructor() {
@@ -180,16 +180,21 @@ export class AppShell extends LitElement {
     this.appStateCtrl = new AppStateController(this);
     this.collapsed = false;
     this.mobileDrawerOpen = false;
+    this.currentHash = window.location.hash || '#/calendar';
 
-    this.router = new Router(this, [
-      { path: '/', render: () => html`<crono-calendar-view></crono-calendar-view>` },
-      { path: '/calendar', render: () => html`<crono-calendar-view></crono-calendar-view>` },
-      { path: '/tasks', render: () => html`<crono-task-list-view></crono-task-list-view>` },
-      { path: '/tags', render: () => html`<crono-tag-list-view></crono-tag-list-view>` },
-      { path: '/history', render: () => html`<crono-history-view></crono-history-view>` },
-      { path: '/settings', render: () => html`<crono-settings-view></crono-settings-view>` },
-      { path: '(.*)', render: () => html`<crono-calendar-view></crono-calendar-view>` }
-    ]);
+    this._onHashChange = () => {
+      this.currentHash = window.location.hash || '#/calendar';
+    };
+  }
+
+  connectedCallback() {
+    super.connectedCallback();
+    window.addEventListener('hashchange', this._onHashChange);
+  }
+
+  disconnectedCallback() {
+    super.disconnectedCallback();
+    window.removeEventListener('hashchange', this._onHashChange);
   }
 
   async firstUpdated() {
@@ -197,9 +202,29 @@ export class AppShell extends LitElement {
   }
 
   _isRouteActive(path) {
-    const hash = window.location.hash || '#/';
-    if (path === '/' || path === '/calendar') return hash === '#/' || hash === '#/calendar' || hash === '';
-    return hash === `#${path}`;
+    const current = this.currentHash || '#/calendar';
+    if (path === '/' || path === '/calendar') {
+      return current === '#/' || current === '#/calendar' || current === '';
+    }
+    return current === `#${path}`;
+  }
+
+  _renderRoute() {
+    const hash = this.currentHash || '#/calendar';
+
+    if (hash === '#/tasks') {
+      return html`<crono-task-list-view></crono-task-list-view>`;
+    }
+    if (hash === '#/tags') {
+      return html`<crono-tag-list-view></crono-tag-list-view>`;
+    }
+    if (hash === '#/history') {
+      return html`<crono-history-view></crono-history-view>`;
+    }
+    if (hash === '#/settings') {
+      return html`<crono-settings-view></crono-settings-view>`;
+    }
+    return html`<crono-calendar-view></crono-calendar-view>`;
   }
 
   render() {
@@ -270,7 +295,7 @@ export class AppShell extends LitElement {
 
         <!-- Main View Outlet -->
         <main class="content-area">
-          ${this.router.outlet()}
+          ${this._renderRoute()}
         </main>
 
         <!-- Bottom Nav Bar Mobile -->

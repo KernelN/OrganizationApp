@@ -94,7 +94,11 @@ export class CronoCalendarDayView extends LitElement {
     const breakWindows = (this.settings.break_windows && this.settings.break_windows[dayName]) || [];
 
     // Filter blocks for selected date
-    const dayBlocks = this.blocks.filter(b => b.start && b.start.startsWith(this.selectedDate));
+    const dayBlocks = this.blocks.filter(b => {
+      if (!b.start) return false;
+      const bDateStr = formatDateISO(new Date(b.start));
+      return bDateStr === this.selectedDate || b.start.startsWith(this.selectedDate);
+    });
 
     return html`
       <div class="grid-container">

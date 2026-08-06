@@ -93,7 +93,11 @@ export class CronoCalendarWeekView extends LitElement {
           `
         )}
         ${weekDays.map((wd) => {
-          const dayBlocks = this.blocks.filter((b) => b.start && b.start.startsWith(wd.dateStr));
+          const dayBlocks = this.blocks.filter((b) => {
+            if (!b.start) return false;
+            const bDateStr = formatDateISO(new Date(b.start));
+            return bDateStr === wd.dateStr || b.start.startsWith(wd.dateStr);
+          });
           return html`
             <div class="day-column">
               ${dayBlocks.map((block) => {

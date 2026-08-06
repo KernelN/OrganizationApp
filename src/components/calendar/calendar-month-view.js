@@ -110,7 +110,11 @@ export class CronoCalendarMonthView extends LitElement {
       <div class="month-grid">
         ${DAY_LABELS.map(l => html`<div class="header-cell">${l}</div>`)}
         ${monthDays.map(d => {
-          const dayBlocks = this.blocks.filter(b => b.start && b.start.startsWith(d.dateStr));
+          const dayBlocks = this.blocks.filter(b => {
+            if (!b.start) return false;
+            const bDateStr = formatDateISO(new Date(b.start));
+            return bDateStr === d.dateStr || b.start.startsWith(d.dateStr);
+          });
           return html`
             <div
               class="day-cell ${d.isCurrentMonth ? '' : 'other-month'}"

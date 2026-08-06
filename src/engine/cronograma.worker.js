@@ -1,5 +1,5 @@
 import { computeSchedule } from './scheduler.js';
-import { ulid } from 'ulid';
+import { generateULID } from '../utils/ulid.js';
 
 let computeTimer = null;
 let lastPayload = null;
@@ -42,7 +42,7 @@ function runScheduleComputation(payload) {
     self.postMessage({ type: 'STATUS', payload: { state: 'computing', lastRun: new Date().toISOString() } });
 
     const { tasks = [], tags = [], dependencies = [], settings = {}, now = new Date().toISOString() } = payload;
-    const schedule = computeSchedule(tasks, tags, dependencies, settings, now, () => ulid());
+    const schedule = computeSchedule(tasks, tags, dependencies, settings, now, () => generateULID());
 
     self.postMessage({ type: 'SCHEDULE', payload: schedule });
     self.postMessage({ type: 'STATUS', payload: { state: 'idle', lastRun: new Date().toISOString() } });
