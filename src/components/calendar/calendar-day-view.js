@@ -1,10 +1,11 @@
 import { LitElement, html, css } from 'lit';
 import { sharedStyles } from '../../styles/shared-styles.js';
 import { getDayName, formatDateISO } from '../../utils/date-utils.js';
+import { hexToRgba } from '../../utils/color-utils.js';
 import './calendar-event-block.js';
 
 /**
- * <crono-calendar-day-view> — Hourly grid day view with scheduled event blocks.
+ * <crono-calendar-day-view> — Hourly grid day view with scheduled event blocks and tag windows.
  */
 export class CronoCalendarDayView extends LitElement {
   static styles = [
@@ -64,6 +65,20 @@ export class CronoCalendarDayView extends LitElement {
         border-top: 1px dashed var(--border);
         border-bottom: 1px dashed var(--border);
       }
+      .tag-window-strip {
+        position: absolute;
+        left: 0;
+        right: 0;
+        z-index: 1;
+        pointer-events: none;
+        box-sizing: border-box;
+        padding: 4px var(--space-sm);
+        display: flex;
+        justify-content: flex-end;
+        font-size: 11px;
+        font-weight: 600;
+        letter-spacing: 0.02em;
+      }
       .block-wrapper {
         position: absolute;
         left: var(--space-sm);
@@ -77,6 +92,8 @@ export class CronoCalendarDayView extends LitElement {
     selectedDate: { type: String },
     blocks: { type: Array },
     tasks: { type: Array },
+    tags: { type: Array },
+    tagWindowsComputed: { type: Array },
     settings: { type: Object }
   };
 
@@ -85,6 +102,8 @@ export class CronoCalendarDayView extends LitElement {
     this.selectedDate = formatDateISO(new Date());
     this.blocks = [];
     this.tasks = [];
+    this.tags = [];
+    this.tagWindowsComputed = [];
     this.settings = {};
   }
 
@@ -99,6 +118,9 @@ export class CronoCalendarDayView extends LitElement {
       const bDateStr = formatDateISO(new Date(b.start));
       return bDateStr === this.selectedDate || b.start.startsWith(this.selectedDate);
     });
+
+    // Filter tag windows for selected date
+    const dayTagWindows = this.tagWindowsComputed.filter(tw => tw.date === this.selectedDate);
 
     return html`
       <div class="grid-container">
@@ -123,6 +145,26 @@ export class CronoCalendarDayView extends LitElement {
                 title="Break Window: ${bw.start} - ${bw.end}"
               ></div>
             `;
+          })}
+
+          <!-- Render Tag Time Windows -->
+          ${dayTagWindows.map(tw => {
+            const tag = this.tags.find(t => t.id === tw.tag_id) || { name: 'Tag', color: '#3B82F6' };
+            const bgRgba = hexToRgba(tag.color, 0.12);
+            return (tw.windows || []).map(w => {
+              const [sH, sM] = w.start.split(':').map(Number);
+              const [eH, eM] = w.end.split(':').map(Number);
+              const topPx = (sH * 60 + sM);
+              const heightPx = Math.max(16, ((eH * 60 + eM) - (sH * 60 + sM)));
+              return html`
+                <div
+                  class="tag-window-strip"
+                  style="top: ${topPx}px; height: ${heightPx}px; background-color: ${bgRgba}; border-left: 3px dashed ${tag.color}; color: ${tag.color};"
+                >
+                  🏷️ ${tag.name} (${w.start} - ${w.end})
+                </div>
+              `;
+            });
           })}
 
           <!-- Render Scheduled Event Blocks -->

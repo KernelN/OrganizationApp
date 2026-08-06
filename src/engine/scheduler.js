@@ -1,4 +1,4 @@
-import { generateTimeSlots, formatDateISO, formatHHMM, diffHours, addDays } from '../utils/date-utils.js';
+import { generateTimeSlots, formatDateISO, formatHHMM, parseHHMMToMins, diffHours, addDays } from '../utils/date-utils.js';
 import { buildDependencyGraph, topologicalSort, hasHardDependency } from './dependency-resolver.js';
 import { computeAlertLevel, computeSlack } from './alert-evaluator.js';
 import { expandManualWindows, generateAutoWindows } from './tag-window-expander.js';
@@ -100,18 +100,32 @@ export function computeSchedule(tasks = [], tags = [], dependencies = [], settin
 
   // ── PHASE 3: Tag Reservation ────────────────────────────
   for (const tag of tags) {
-    if (tag.needs_dedicated_timeslot && tagWindowMap[tag.id]) {
+    if (tagWindowMap[tag.id]) {
       for (const [dateStr, windowList] of Object.entries(tagWindowMap[tag.id])) {
         for (const w of windowList) {
-          const wStartMs = new Date(`${dateStr}T${w.start}:00Z`).getTime();
-          const wEndMs = new Date(`${dateStr}T${w.end}:00Z`).getTime();
+          const wStartMins = parseHHMMToMins(w.start);
+          const wEndMins = parseHHMMToMins(w.end);
 
           for (const slot of allSlots) {
-            const sStartMs = new Date(slot.start).getTime();
-            const sEndMs = new Date(slot.end).getTime();
-            if (sStartMs >= wStartMs && sEndMs <= wEndMs) {
-              slot.tagReserved = true;
-              slot.tagReservedId = tag.id;
+            const slotStartObj = new Date(slot.start);
+            const slotEndObj = new Date(slot.end);
+            const slotDateStr = formatDateISO(slotStartObj);
+
+            if (slotDateStr === dateStr) {
+              const slotStartMins = slotStartObj.getHours() * 60 + slotStartObj.getMinutes();
+              let slotEndMins = slotEndObj.getHours() * 60 + slotEndObj.getMinutes();
+              if (slotEndMins === 0 && slotEndObj.getDate() !== slotStartObj.getDate()) {
+                slotEndMins = 1440;
+              }
+
+              if (slotStartMins >= wStartMins && slotEndMins <= wEndMins) {
+                if (tag.needs_dedicated_timeslot) {
+                  slot.tagReserved = true;
+                  slot.tagReservedId = tag.id;
+                }
+                if (!slot.matchingTagIds) slot.matchingTagIds = new Set();
+                slot.matchingTagIds.add(tag.id);
+              }
             }
           }
         }
@@ -125,7 +139,6 @@ export function computeSchedule(tasks = [], tags = [], dependencies = [], settin
     if (task.status !== 'active' || task.manual_schedule) continue;
 
     if (task.recurrence) {
-      // Recurring task handling: generate instance for pool
       const instance = { ...task, parent_task_id: task.id };
       if (task.recurrence.accumulates && task.accumulated_count > 0) {
         const cap = task.recurrence.accumulation_cap || settings.default_accumulation_cap || 5;
@@ -178,12 +191,20 @@ export function computeSchedule(tasks = [], tags = [], dependencies = [], settin
     const primaryTag = primaryTagId ? tags.find(tg => tg.id === primaryTagId) : null;
 
     if (primaryTag && tagWindowMap[primaryTag.id]) {
-      candidateSlots = allSlots.filter(s => !s.occupied && s.tagReservedId === primaryTag.id);
+      candidateSlots = allSlots.filter(s => {
+        if (s.occupied) return false;
+        if (s.tagReserved && s.tagReservedId !== primaryTag.id) return false;
+        if (!s.matchingTagIds || !s.matchingTagIds.has(primaryTag.id)) return false;
+        if (!task.ignore_breaks && s.is_break) return false;
+        return true;
+      });
     } else {
-      candidateSlots = allSlots.filter(s => !s.occupied && !s.tagReserved);
-      if (!task.ignore_breaks) {
-        candidateSlots = candidateSlots.filter(s => !s.is_break);
-      }
+      candidateSlots = allSlots.filter(s => {
+        if (s.occupied) return false;
+        if (s.tagReserved) return false;
+        if (!task.ignore_breaks && s.is_break) return false;
+        return true;
+      });
     }
 
     const slotsNeeded = Math.ceil(task.duration_hours / slotSizeHours);
@@ -194,7 +215,6 @@ export function computeSchedule(tasks = [], tags = [], dependencies = [], settin
     } else {
       allocated = findFirstContiguousBlock(candidateSlots, slotsNeeded);
       if (!allocated) {
-        // Fallback: force-split non-splittable task if contiguous block missing
         allocated = takeFirstN(candidateSlots, slotsNeeded);
         alerts.push({
           task_id: task.id,
@@ -243,6 +263,8 @@ export function computeSchedule(tasks = [], tags = [], dependencies = [], settin
       });
     }
   }
+
+  scheduledBlocks.sort((a, b) => new Date(a.start).getTime() - new Date(b.start).getTime());
 
   return {
     computed_at: now,

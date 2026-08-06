@@ -74,7 +74,8 @@ export class CronoCalendarView extends LitElement {
   }
 
   _navigate(offset) {
-    const d = new Date(this.selectedDate);
+    const [y, m, day] = (this.selectedDate || formatDateISO(new Date())).split('-').map(Number);
+    const d = new Date(y, m - 1, day);
     if (this.mode === 'day') d.setDate(d.getDate() + offset);
     else if (this.mode === 'week') d.setDate(d.getDate() + offset * 7);
     else if (this.mode === 'month') d.setMonth(d.getMonth() + offset);
@@ -87,7 +88,9 @@ export class CronoCalendarView extends LitElement {
 
   render() {
     const blocks = appState.schedule ? appState.schedule.blocks || [] : [];
+    const tagWindowsComputed = appState.schedule ? appState.schedule.tag_windows_computed || [] : [];
     const tasks = appState.tasks || [];
+    const tags = appState.tags || [];
     const settings = appState.settings || {};
 
     const formattedHeader = new Date(this.selectedDate).toLocaleDateString('en-US', {
@@ -129,6 +132,8 @@ export class CronoCalendarView extends LitElement {
                 .selectedDate=${this.selectedDate}
                 .blocks=${blocks}
                 .tasks=${tasks}
+                .tags=${tags}
+                .tagWindowsComputed=${tagWindowsComputed}
                 .settings=${settings}
               ></crono-calendar-day-view>
             `

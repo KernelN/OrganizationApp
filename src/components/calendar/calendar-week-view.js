@@ -97,7 +97,7 @@ export class CronoCalendarWeekView extends LitElement {
             if (!b.start) return false;
             const bDateStr = formatDateISO(new Date(b.start));
             return bDateStr === wd.dateStr || b.start.startsWith(wd.dateStr);
-          });
+          }).sort((a, b) => new Date(a.start).getTime() - new Date(b.start).getTime());
           return html`
             <div class="day-column">
               ${dayBlocks.map((block) => {

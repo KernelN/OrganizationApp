@@ -34,6 +34,17 @@ export function parseHHMM(baseDate, timeStr) {
 }
 
 /**
+ * Converts 'HH:MM' string to minutes from midnight (0..1440).
+ * @param {string} hhmmStr 
+ * @returns {number}
+ */
+export function parseHHMMToMins(hhmmStr) {
+  if (!hhmmStr || typeof hhmmStr !== 'string') return 0;
+  const [h, m] = hhmmStr.split(':').map(Number);
+  return (h || 0) * 60 + (m || 0);
+}
+
+/**
  * Formats a Date object as 'HH:MM' 24h string.
  * @param {Date|string} date 
  * @returns {string} 'HH:MM'
@@ -46,13 +57,18 @@ export function formatHHMM(date) {
 }
 
 /**
- * Formats a Date object as ISO date string 'YYYY-MM-DD'.
+ * Formats a Date object as local ISO date string 'YYYY-MM-DD'.
  * @param {Date|string} date 
  * @returns {string}
  */
 export function formatDateISO(date) {
+  if (!date) return '';
   const d = new Date(date);
-  return d.toISOString().split('T')[0];
+  if (isNaN(d.getTime())) return '';
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
 }
 
 /**
@@ -117,15 +133,26 @@ export function generateTimeSlots(now, horizon, workWindows = {}, breakWindows =
     const dayWorkWindows = workWindows[dayName] || [];
     const dayBreakWindows = breakWindows[dayName] || [];
 
-    const currHHMM = formatHHMM(curr);
-    const nextHHMM = formatHHMM(nextSlot);
+    const currMins = curr.getHours() * 60 + curr.getMinutes();
+    let nextMins = nextSlot.getHours() * 60 + nextSlot.getMinutes();
+    if (nextMins === 0 && nextSlot.getDate() !== curr.getDate()) {
+      nextMins = 1440;
+    }
 
     // Check if slot falls inside any work window
-    const inWorkWindow = dayWorkWindows.some(w => currHHMM >= w.start && nextHHMM <= w.end);
+    const inWorkWindow = dayWorkWindows.some(w => {
+      const wStartMins = parseHHMMToMins(w.start);
+      const wEndMins = parseHHMMToMins(w.end);
+      return currMins >= wStartMins && nextMins <= wEndMins;
+    });
 
     if (inWorkWindow) {
       // Check if slot overlaps any break window
-      const isBreak = dayBreakWindows.some(b => currHHMM >= b.start && nextHHMM <= b.end);
+      const isBreak = dayBreakWindows.some(b => {
+        const bStartMins = parseHHMMToMins(b.start);
+        const bEndMins = parseHHMMToMins(b.end);
+        return currMins >= bStartMins && nextMins <= bEndMins;
+      });
 
       slots.push({
         start: curr.toISOString(),

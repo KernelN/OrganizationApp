@@ -1,6 +1,7 @@
 import { LitElement, html, css } from 'lit';
 import { sharedStyles } from '../../styles/shared-styles.js';
 import { hexToRgba } from '../../utils/color-utils.js';
+import { formatHHMM } from '../../utils/date-utils.js';
 
 /**
  * <crono-calendar-event-block> — Render element for scheduled task/tag block.
@@ -101,8 +102,8 @@ export class CronoCalendarEventBlock extends LitElement {
     if (alertLevel === 'red') alertClass = 'alert-red-border';
     else if (alertLevel === 'orange') alertClass = 'alert-orange-border';
 
-    const startHHMM = this.block.start ? this.block.start.split('T')[1].substring(0, 5) : '';
-    const endHHMM = this.block.end ? this.block.end.split('T')[1].substring(0, 5) : '';
+    const startHHMM = this.block.start ? formatHHMM(this.block.start) : '';
+    const endHHMM = this.block.end ? formatHHMM(this.block.end) : '';
 
     return html`
       <div

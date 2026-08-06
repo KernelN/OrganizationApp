@@ -1,3 +1,5 @@
+import { formatDateISO } from '../utils/date-utils.js';
+
 class ScheduleState extends EventTarget {
   constructor() {
     super();
@@ -30,7 +32,8 @@ class ScheduleState extends EventTarget {
   getBlocksForDay(dateISOStr) {
     if (!this.schedule || !Array.isArray(this.schedule.blocks)) return [];
     return this.schedule.blocks.filter(b => {
-      const bDate = b.start.split('T')[0];
+      if (!b.start) return false;
+      const bDate = formatDateISO(new Date(b.start));
       return bDate === dateISOStr;
     });
   }
