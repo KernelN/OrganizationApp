@@ -6,14 +6,17 @@ This guide will walk you through hosting **Cronograma** online for free using Gi
 
 ## 🌐 Step 1: Enable GitHub Pages
 
-1. Go to your repository on GitHub: **[KernelN/OrganizationApp](https://github.com/KernelN/OrganizationApp)**.
-2. Click on **Settings** (top navigation tab of your repository).
-3. In the left sidebar, click on **Pages** (under *Code and automation*).
-4. Under **Build and deployment**:
-   - Set **Source** to **GitHub Actions**.
-5. Push the changes to `main` branch. The automated workflow (`.github/workflows/deploy.yml`) will automatically build and publish your app. 
-6. Once deployed, your site will be live at:
+1. Go to your repository settings on GitHub: **[KernelN/OrganizationApp Settings](https://github.com/KernelN/OrganizationApp/settings/pages)**.
+2. In the left sidebar, click **Pages** (under *Code and automation*).
+3. Under **Build and deployment**:
+   - Change **Source** dropdown to **Deploy from a branch**.
+   - Select Branch: **`gh-pages`**
+   - Select Folder: **`/ (root)`**
+4. Click **Save**.
+5. Within ~15 seconds, your site will be live at:
    👉 **`https://KernelN.github.io/OrganizationApp/`**
+
+> **Note**: Whenever you update your code in the future, simply run `npm run deploy` in your project terminal to automatically re-build and push updates directly to GitHub Pages!
 
 ---
 
