@@ -1,156 +1,119 @@
 import { LitElement, html, css } from 'lit';
-import { DAYS_OF_WEEK } from '../../utils/date-utils.js';
+import { sharedStyles } from '../../styles/shared-styles.js';
 import '../shared/time-range-input.js';
 
-export class TagTimeWindowEditor extends LitElement {
+const DAYS = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
+
+/**
+ * <crono-tag-time-window-editor> — Per-day-of-week time windows configuration component.
+ */
+export class CronoTagTimeWindowEditor extends LitElement {
+  static styles = [
+    sharedStyles,
+    css`
+      :host {
+        display: block;
+      }
+      .day-row {
+        display: flex;
+        flex-direction: column;
+        gap: var(--space-xs);
+        padding: var(--space-sm) 0;
+        border-bottom: 1px solid var(--border);
+      }
+      .day-name {
+        font-weight: 600;
+        text-transform: capitalize;
+        font-size: 13px;
+      }
+      .windows-list {
+        display: flex;
+        flex-direction: column;
+        gap: var(--space-xs);
+      }
+      .window-item {
+        display: flex;
+        align-items: center;
+        gap: var(--space-sm);
+      }
+    `
+  ];
+
   static properties = {
     timeWindows: { type: Object }
   };
 
-  static styles = css`
-    :host {
-      display: block;
-    }
-
-    .editor-container {
-      display: flex;
-      flex-direction: column;
-      gap: 12px;
-    }
-
-    .day-row {
-      display: flex;
-      flex-direction: column;
-      gap: 6px;
-      padding: 10px 12px;
-      background: var(--color-bg-base, #121318);
-      border: 1px solid var(--color-border, #2E3242);
-      border-radius: var(--radius-md, 8px);
-    }
-
-    .day-header {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      font-weight: 600;
-      font-size: 0.875rem;
-      text-transform: capitalize;
-    }
-
-    .window-list {
-      display: flex;
-      flex-direction: column;
-      gap: 6px;
-    }
-
-    .window-item {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-    }
-
-    .btn-add {
-      background: transparent;
-      border: none;
-      color: var(--color-accent, #6366F1);
-      cursor: pointer;
-      font-size: 0.8125rem;
-      font-weight: 600;
-    }
-
-    .btn-remove {
-      background: transparent;
-      border: none;
-      color: var(--color-text-secondary, #9CA3AF);
-      cursor: pointer;
-      font-size: 1rem;
-      padding: 2px 6px;
-    }
-  `;
-
   constructor() {
     super();
-    this.timeWindows = {};
-  }
-
-  addWindow(day) {
-    const current = this.timeWindows[day] || [];
     this.timeWindows = {
-      ...this.timeWindows,
-      [day]: [...current, { start: '09:00', end: '17:00' }]
+      monday: [], tuesday: [], wednesday: [], thursday: [], friday: [], saturday: [], sunday: []
     };
-    this.emitChange();
   }
 
-  removeWindow(day, index) {
-    const current = this.timeWindows[day] || [];
-    this.timeWindows = {
-      ...this.timeWindows,
-      [day]: current.filter((_, i) => i !== index)
-    };
-    this.emitChange();
+  _addWindow(day) {
+    const current = Array.isArray(this.timeWindows[day]) ? [...this.timeWindows[day]] : [];
+    current.push({ start: '09:00', end: '12:00' });
+    this.timeWindows = { ...this.timeWindows, [day]: current };
+    this._dispatchChange();
   }
 
-  updateWindow(day, index, range) {
-    const current = [...(this.timeWindows[day] || [])];
-    current[index] = range;
-    this.timeWindows = {
-      ...this.timeWindows,
-      [day]: current
-    };
-    this.emitChange();
+  _removeWindow(day, idx) {
+    const current = Array.isArray(this.timeWindows[day]) ? [...this.timeWindows[day]] : [];
+    current.splice(idx, 1);
+    this.timeWindows = { ...this.timeWindows, [day]: current };
+    this._dispatchChange();
   }
 
-  emitChange() {
-    this.dispatchEvent(
-      new CustomEvent('time-windows-change', {
-        detail: { timeWindows: this.timeWindows }
-      })
-    );
+  _updateRange(day, idx, range) {
+    const current = Array.isArray(this.timeWindows[day]) ? [...this.timeWindows[day]] : [];
+    current[idx] = range;
+    this.timeWindows = { ...this.timeWindows, [day]: current };
+    this._dispatchChange();
+  }
+
+  _dispatchChange() {
+    this.dispatchEvent(new CustomEvent('crono-windows-change', {
+      detail: { timeWindows: this.timeWindows },
+      bubbles: true,
+      composed: true
+    }));
   }
 
   render() {
     return html`
-      <div class="editor-container">
-        ${DAYS_OF_WEEK.map(day => {
-          const windows = this.timeWindows[day] || [];
-          return html`
-            <div class="day-row">
-              <div class="day-header">
-                <span>${day}</span>
-                <button class="btn-add" type="button" @click="${() => this.addWindow(day)}">
-                  + Add Window
-                </button>
-              </div>
-
-              <div class="window-list">
-                ${windows.length === 0
-                  ? html`<span style="font-size: 0.75rem; color: var(--color-text-muted);">No windows</span>`
-                  : windows.map(
-                      (win, idx) => html`
-                        <div class="window-item">
-                          <time-range-input
-                            .start="${win.start}"
-                            .end="${win.end}"
-                            @range-change="${(e) => this.updateWindow(day, idx, e.detail)}"
-                          ></time-range-input>
-                          <button
-                            class="btn-remove"
-                            type="button"
-                            @click="${() => this.removeWindow(day, idx)}"
-                          >
-                            ✕
-                          </button>
-                        </div>
-                      `
-                    )}
-              </div>
+      ${DAYS.map(day => {
+        const windows = Array.isArray(this.timeWindows[day]) ? this.timeWindows[day] : [];
+        return html`
+          <div class="day-row">
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+              <span class="day-name">${day}</span>
+              <button
+                type="button"
+                class="crono-btn crono-btn-secondary crono-btn-sm"
+                @click=${() => this._addWindow(day)}
+              >+ Add Window</button>
             </div>
-          `;
-        })}
-      </div>
+            <div class="windows-list">
+              ${windows.map((w, idx) => html`
+                <div class="window-item">
+                  <crono-time-range-input
+                    .start=${w.start}
+                    .end=${w.end}
+                    @crono-time-range-change=${e => this._updateRange(day, idx, e.detail)}
+                  ></crono-time-range-input>
+                  <button
+                    type="button"
+                    class="crono-btn crono-btn-icon"
+                    @click=${() => this._removeWindow(day, idx)}
+                  >✕</button>
+                </div>
+              `)}
+            </div>
+          </div>
+        `;
+      })}
     `;
   }
 }
 
-customElements.define('tag-time-window-editor', TagTimeWindowEditor);
+customElements.define('crono-tag-time-window-editor', CronoTagTimeWindowEditor);

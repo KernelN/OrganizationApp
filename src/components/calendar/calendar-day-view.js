@@ -1,182 +1,209 @@
 import { LitElement, html, css } from 'lit';
-import { appState } from '../../state/app-state.js';
-import { scheduleState } from '../../state/schedule-state.js';
-import { getDayOfWeekString, formatLocalDate } from '../../utils/date-utils.js';
+import { sharedStyles } from '../../styles/shared-styles.js';
+import { getDayName, formatDateISO } from '../../utils/date-utils.js';
+import { hexToRgba } from '../../utils/color-utils.js';
 import './calendar-event-block.js';
 
-export class CalendarDayView extends LitElement {
+/**
+ * <crono-calendar-day-view> — Hourly grid day view with scheduled event blocks and tag windows.
+ */
+export class CronoCalendarDayView extends LitElement {
+  static styles = [
+    sharedStyles,
+    css`
+      :host {
+        display: block;
+        height: 100%;
+        overflow-y: auto;
+      }
+      .grid-container {
+        display: flex;
+        position: relative;
+        min-height: 1440px; /* 24h * 60px/hr */
+        background: var(--bg-secondary);
+        border-radius: var(--radius-lg);
+        border: 1px solid var(--border);
+      }
+      .time-column {
+        width: 60px;
+        flex-shrink: 0;
+        border-right: 1px solid var(--border);
+        display: flex;
+        flex-direction: column;
+      }
+      .time-slot-label {
+        height: 60px;
+        font-family: var(--font-mono);
+        font-size: 11px;
+        color: var(--text-muted);
+        text-align: right;
+        padding-right: var(--space-xs);
+        box-sizing: border-box;
+      }
+      .slots-column {
+        flex: 1;
+        position: relative;
+      }
+      .hour-line {
+        height: 60px;
+        border-bottom: 1px solid var(--border);
+        box-sizing: border-box;
+      }
+      .break-strip {
+        position: absolute;
+        left: 0;
+        right: 0;
+        background: repeating-linear-gradient(
+          -45deg,
+          rgba(239, 68, 68, 0.12),
+          rgba(239, 68, 68, 0.12) 10px,
+          rgba(239, 68, 68, 0.04) 10px,
+          rgba(239, 68, 68, 0.04) 20px
+        );
+        pointer-events: none;
+        z-index: 1;
+        border-top: 1px dashed rgba(239, 68, 68, 0.5);
+        border-bottom: 1px dashed rgba(239, 68, 68, 0.5);
+        box-sizing: border-box;
+        padding: 4px var(--space-sm);
+        display: flex;
+        justify-content: flex-start;
+        align-items: center;
+        font-size: 11px;
+        font-weight: 600;
+        color: var(--alert-red);
+      }
+      .tag-window-strip {
+        position: absolute;
+        left: 0;
+        right: 0;
+        z-index: 1;
+        pointer-events: none;
+        box-sizing: border-box;
+        padding: 4px var(--space-sm);
+        display: flex;
+        justify-content: flex-end;
+        font-size: 11px;
+        font-weight: 600;
+        letter-spacing: 0.02em;
+      }
+      .block-wrapper {
+        position: absolute;
+        left: var(--space-sm);
+        right: var(--space-sm);
+        z-index: 2;
+      }
+    `
+  ];
+
   static properties = {
-    selectedDate: { type: Object }
+    selectedDate: { type: String },
+    blocks: { type: Array },
+    tasks: { type: Array },
+    tags: { type: Array },
+    tagWindowsComputed: { type: Array },
+    settings: { type: Object }
   };
-
-  static styles = css`
-    :host {
-      display: block;
-      height: 100%;
-    }
-
-    .timeline-container {
-      display: flex;
-      flex-direction: column;
-      background: var(--color-bg-surface, #1A1C23);
-      border: 1px solid var(--color-border, #2E3242);
-      border-radius: var(--radius-lg, 12px);
-      overflow-y: auto;
-      height: 700px;
-      position: relative;
-    }
-
-    .grid-row {
-      display: flex;
-      height: 60px;
-      border-bottom: 1px solid var(--color-border-subtle, #242735);
-      position: relative;
-    }
-
-    .time-label {
-      width: 70px;
-      padding: 8px 12px;
-      font-size: 0.75rem;
-      font-weight: 600;
-      color: var(--color-text-muted, #6B7280);
-      border-right: 1px solid var(--color-border, #2E3242);
-      background: var(--color-bg-base, #121318);
-      user-select: none;
-    }
-
-    .slot-area {
-      flex: 1;
-      position: relative;
-      background: transparent;
-    }
-
-    .slot-area.is-work {
-      background: rgba(99, 102, 241, 0.03);
-    }
-
-    .slot-area.is-break {
-      background: rgba(245, 158, 11, 0.06);
-    }
-
-    /* Red indicator line for current time */
-    .now-indicator {
-      position: absolute;
-      left: 70px;
-      right: 0;
-      height: 2px;
-      background: #EF4444;
-      z-index: 10;
-      pointer-events: none;
-    }
-
-    .now-indicator::before {
-      content: '';
-      position: absolute;
-      left: -5px;
-      top: -4px;
-      width: 10px;
-      height: 10px;
-      border-radius: 50%;
-      background: #EF4444;
-    }
-
-    .block-wrapper {
-      position: absolute;
-      left: 80px;
-      right: 16px;
-      z-index: 5;
-    }
-  `;
 
   constructor() {
     super();
-    this.selectedDate = new Date();
-  }
-
-  connectedCallback() {
-    super.connectedCallback();
-    this.unsubscribeSchedule = scheduleState.subscribe(() => this.requestUpdate());
-    this.unsubscribeApp = appState.subscribe(() => this.requestUpdate());
-  }
-
-  disconnectedCallback() {
-    super.disconnectedCallback();
-    if (this.unsubscribeSchedule) this.unsubscribeSchedule();
-    if (this.unsubscribeApp) this.unsubscribeApp();
-  }
-
-  getBlocksForDay() {
-    const targetDateStr = formatLocalDate(this.selectedDate);
-    const allBlocks = scheduleState.blocks || [];
-    return allBlocks.filter(b => {
-      const blockDateStr = formatLocalDate(b.start);
-      return blockDateStr === targetDateStr;
-    });
-  }
-
-  calculateNowPosition() {
-    const now = new Date();
-    const targetDateStr = formatLocalDate(this.selectedDate);
-    const nowDateStr = formatLocalDate(now);
-    if (targetDateStr !== nowDateStr) return null;
-
-    const hours = now.getHours();
-    const minutes = now.getMinutes();
-    return hours * 60 + minutes;
+    this.selectedDate = formatDateISO(new Date());
+    this.blocks = [];
+    this.tasks = [];
+    this.tags = [];
+    this.tagWindowsComputed = [];
+    this.settings = {};
   }
 
   render() {
     const hours = Array.from({ length: 24 }, (_, i) => i);
-    const dayStr = getDayOfWeekString(this.selectedDate);
-    const settings = appState.settings || {};
-    const workWindows = settings.work_windows?.[dayStr] || [];
-    const breakWindows = settings.break_windows?.[dayStr] || [];
+    const dayName = getDayName(this.selectedDate);
+    const breakWindows = (this.settings.break_windows && this.settings.break_windows[dayName]) || [];
 
-    const dayBlocks = this.getBlocksForDay();
-    const nowPosMinutes = this.calculateNowPosition();
+    // Filter blocks for selected date
+    const dayBlocks = this.blocks.filter(b => {
+      if (!b.start) return false;
+      const bDateStr = formatDateISO(new Date(b.start));
+      return bDateStr === this.selectedDate || b.start.startsWith(this.selectedDate);
+    });
+
+    // Filter tag windows for selected date
+    const dayTagWindows = this.tagWindowsComputed.filter(tw => tw.date === this.selectedDate);
 
     return html`
-      <div class="timeline-container">
-        ${nowPosMinutes !== null
-          ? html`<div class="now-indicator" style="top: ${nowPosMinutes}px;"></div>`
-          : ''}
+      <div class="grid-container">
+        <div class="time-column">
+          ${hours.map(h => html`
+            <div class="time-slot-label">${String(h).padStart(2, '0')}:00</div>
+          `)}
+        </div>
+        <div class="slots-column">
+          ${hours.map(h => html`<div class="hour-line"></div>`)}
 
-        ${hours.map(h => {
-          const hhStr = `${String(h).padStart(2, '0')}:00`;
+          <!-- Render Break Windows -->
+          ${breakWindows.map(bw => {
+            const [sH, sM] = bw.start.split(':').map(Number);
+            const [eH, eM] = bw.end.split(':').map(Number);
+            const topPx = (sH * 60 + sM);
+            const heightPx = Math.max(16, ((eH * 60 + eM) - (sH * 60 + sM)));
+            return html`
+              <div
+                class="break-strip"
+                style="top: ${topPx}px; height: ${heightPx}px;"
+                title="Break Window: ${bw.start} - ${bw.end}"
+              >
+                ☕ Break (${bw.start} - ${bw.end})
+              </div>
+            `;
+          })}
 
-          const isWork = workWindows.some(w => hhStr >= w.start && hhStr < w.end);
-          const isBreak = breakWindows.some(b => hhStr >= b.start && hhStr < b.end);
+          <!-- Render Tag Time Windows -->
+          ${dayTagWindows.map(tw => {
+            const tag = this.tags.find(t => t.id === tw.tag_id) || { name: 'Tag', color: '#3B82F6' };
+            const bgRgba = hexToRgba(tag.color, 0.12);
+            return (tw.windows || []).map(w => {
+              const [sH, sM] = w.start.split(':').map(Number);
+              const [eH, eM] = w.end.split(':').map(Number);
+              const topPx = (sH * 60 + sM);
+              const heightPx = Math.max(16, ((eH * 60 + eM) - (sH * 60 + sM)));
+              return html`
+                <div
+                  class="tag-window-strip"
+                  style="top: ${topPx}px; height: ${heightPx}px; background-color: ${bgRgba}; border-left: 3px dashed ${tag.color}; color: ${tag.color};"
+                >
+                  🏷️ ${tag.name} (${w.start} - ${w.end})
+                </div>
+              `;
+            });
+          })}
 
-          return html`
-            <div class="grid-row">
-              <div class="time-label">${hhStr}</div>
-              <div class="slot-area ${isBreak ? 'is-break' : isWork ? 'is-work' : ''}"></div>
-            </div>
-          `;
-        })}
+          <!-- Render Scheduled Event Blocks -->
+          ${dayBlocks.map(block => {
+            const startDate = new Date(block.start);
+            const endDate = new Date(block.end);
+            const startMins = startDate.getHours() * 60 + startDate.getMinutes();
+            const endMins = endDate.getHours() * 60 + endDate.getMinutes();
 
-        ${dayBlocks.map(block => {
-          const startDate = new Date(block.start);
-          const endDate = new Date(block.end);
+            const topPx = startMins;
+            const heightPx = Math.max(24, endMins - startMins);
+            const task = this.tasks.find(t => t.id === block.task_id) || { title: 'Task', color: '#6366F1' };
 
-          const startMinutes = startDate.getHours() * 60 + startDate.getMinutes();
-          const endMinutes = endDate.getHours() * 60 + endDate.getMinutes();
-          const height = Math.max(30, endMinutes - startMinutes);
-
-          const task = appState.tasks.find(t => t.id === block.task_id);
-
-          return html`
-            <div
-              class="block-wrapper"
-              style="top: ${startMinutes}px; height: ${height}px;"
-            >
-              <calendar-event-block .block="${block}" .task="${task}"></calendar-event-block>
-            </div>
-          `;
-        })}
+            return html`
+              <div
+                class="block-wrapper"
+                style="top: ${topPx}px; height: ${heightPx}px;"
+              >
+                <crono-calendar-event-block
+                  .block=${block}
+                  .task=${task}
+                ></crono-calendar-event-block>
+              </div>
+            `;
+          })}
+        </div>
       </div>
     `;
   }
 }
 
-customElements.define('calendar-day-view', CalendarDayView);
+customElements.define('crono-calendar-day-view', CronoCalendarDayView);

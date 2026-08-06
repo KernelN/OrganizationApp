@@ -1,8 +1,8 @@
-/**
- * Computed schedule state holder (in memory).
- */
-export class ScheduleState {
+import { formatDateISO } from '../utils/date-utils.js';
+
+class ScheduleState extends EventTarget {
   constructor() {
+    super();
     this.schedule = {
       computed_at: null,
       horizon_end: null,
@@ -10,18 +10,7 @@ export class ScheduleState {
       alerts: [],
       tag_windows_computed: []
     };
-    this.listeners = new Set();
-  }
-
-  subscribe(listener) {
-    this.listeners.add(listener);
-    return () => this.listeners.delete(listener);
-  }
-
-  notify() {
-    for (const listener of this.listeners) {
-      listener();
-    }
+    this.status = 'idle'; // 'idle' | 'computing'
   }
 
   setSchedule(newSchedule) {
@@ -32,15 +21,21 @@ export class ScheduleState {
       alerts: [],
       tag_windows_computed: []
     };
-    this.notify();
+    this.dispatchEvent(new CustomEvent('schedule-changed', { detail: this.schedule }));
   }
 
-  get blocks() {
-    return this.schedule.blocks || [];
+  setStatus(status) {
+    this.status = status;
+    this.dispatchEvent(new CustomEvent('status-changed', { detail: status }));
   }
 
-  get alerts() {
-    return this.schedule.alerts || [];
+  getBlocksForDay(dateISOStr) {
+    if (!this.schedule || !Array.isArray(this.schedule.blocks)) return [];
+    return this.schedule.blocks.filter(b => {
+      if (!b.start) return false;
+      const bDate = formatDateISO(new Date(b.start));
+      return bDate === dateISOStr;
+    });
   }
 }
 

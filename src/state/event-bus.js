@@ -1,6 +1,3 @@
-/**
- * Lightweight global EventBus for decoupled component communication.
- */
 class EventBus extends EventTarget {
   emit(eventName, detail = {}) {
     this.dispatchEvent(new CustomEvent(eventName, { detail }));

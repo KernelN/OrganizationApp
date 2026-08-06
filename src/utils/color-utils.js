@@ -1,23 +1,22 @@
 /**
- * Convert Hex color to HSL object
- * @param {string} hex 
- * @returns {{h: number, s: number, l: number}}
+ * Converts a 6-digit hex color to HSL components { h, s, l }.
+ * @param {string} hex - Hex color e.g., "#6366F1"
+ * @returns {{ h: number, s: number, l: number }} HSL values (h: 0-360, s: 0-100, l: 0-100)
  */
 export function hexToHSL(hex) {
-  let c = hex.replace('#', '');
-  if (c.length === 3) {
-    c = c.split('').map(x => x + x).join('');
+  let cleanHex = hex.replace(/^#/, '');
+  if (cleanHex.length === 3) {
+    cleanHex = cleanHex.split('').map(c => c + c).join('');
   }
-  const num = parseInt(c, 16);
-  const r = ((num >> 16) & 255) / 255;
-  const g = ((num >> 8) & 255) / 255;
-  const b = (num & 255) / 255;
+  const r = parseInt(cleanHex.substring(0, 2), 16) / 255;
+  const g = parseInt(cleanHex.substring(2, 4), 16) / 255;
+  const b = parseInt(cleanHex.substring(4, 6), 16) / 255;
 
   const max = Math.max(r, g, b);
   const min = Math.min(r, g, b);
   let h = 0;
   let s = 0;
-  const l = (max + min) / 2;
+  let l = (max + min) / 2;
 
   if (max !== min) {
     const d = max - min;
@@ -38,13 +37,31 @@ export function hexToHSL(hex) {
 }
 
 /**
- * Apply dynamic accent color to document root custom properties
- * @param {string} hexAccent 
+ * Updates root document CSS variables based on accent hex color.
+ * @param {string} accentHex 
  */
-export function applyAccentColor(hexAccent) {
-  if (!hexAccent || !/^#[0-9A-Fa-f]{6}$/.test(hexAccent)) return;
-  const { h, s, l } = hexToHSL(hexAccent);
-  document.documentElement.style.setProperty('--accent-h', `${h}`);
-  document.documentElement.style.setProperty('--accent-s', `${s}%`);
-  document.documentElement.style.setProperty('--accent-l', `${l}%`);
+export function applyAccentColor(accentHex) {
+  if (!accentHex || !/^#[0-9A-Fa-f]{6}$/.test(accentHex)) return;
+  const { h, s, l } = hexToHSL(accentHex);
+  const root = document.documentElement;
+  root.style.setProperty('--accent-h', `${h}`);
+  root.style.setProperty('--accent-s', `${s}%`);
+  root.style.setProperty('--accent-l', `${l}%`);
+}
+
+/**
+ * Converts hex color to CSS rgba string with given alpha opacity.
+ * @param {string} hex 
+ * @param {number} alpha (0 to 1)
+ * @returns {string} rgba color
+ */
+export function hexToRgba(hex, alpha = 1) {
+  let cleanHex = hex.replace(/^#/, '');
+  if (cleanHex.length === 3) {
+    cleanHex = cleanHex.split('').map(c => c + c).join('');
+  }
+  const r = parseInt(cleanHex.substring(0, 2), 16);
+  const g = parseInt(cleanHex.substring(2, 4), 16);
+  const b = parseInt(cleanHex.substring(4, 6), 16);
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
 }

@@ -1,313 +1,343 @@
 import { LitElement, html, css } from 'lit';
-import { appState } from './state/app-state.js';
+import { sharedStyles } from './styles/shared-styles.js';
+import { appState, AppStateController } from './state/app-state.js';
+import { scheduleState } from './state/schedule-state.js';
+import './components/shared/toast-notification.js';
 import './components/calendar/calendar-view.js';
 import './components/tasks/task-list-view.js';
 import './components/tags/tag-list-view.js';
 import './components/history/history-view.js';
 import './components/settings/settings-view.js';
 
+/**
+ * <app-shell> — Root application shell component.
+ */
 export class AppShell extends LitElement {
-  static properties = {
-    currentRoute: { type: String }
-  };
-
-  static styles = css`
-    :host {
-      display: flex;
-      flex-direction: row;
-      height: 100vh;
-      width: 100vw;
-      overflow: hidden;
-      background-color: var(--color-bg-base, #121318);
-      color: var(--color-text-primary, #F3F4F6);
-      font-family: var(--font-family-sans, sans-serif);
-    }
-
-    /* Sidebar Navigation (Desktop) */
-    .sidebar {
-      width: 260px;
-      background: var(--color-bg-surface, #1A1C23);
-      border-right: 1px solid var(--color-border, #2E3242);
-      display: flex;
-      flex-direction: column;
-      justify-content: space-between;
-      padding: var(--space-4, 16px);
-    }
-
-    .brand {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      padding: 8px 12px;
-      margin-bottom: 24px;
-    }
-
-    .brand-logo {
-      width: 32px;
-      height: 32px;
-      background: var(--color-accent, #6366F1);
-      border-radius: 8px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-weight: 800;
-      color: #fff;
-      font-family: var(--font-family-display);
-      box-shadow: 0 0 12px var(--color-accent-subtle, rgba(99, 102, 241, 0.3));
-    }
-
-    .brand-title {
-      font-family: var(--font-family-display, sans-serif);
-      font-size: 1.25rem;
-      font-weight: 700;
-      letter-spacing: -0.02em;
-    }
-
-    .nav-list {
-      display: flex;
-      flex-direction: column;
-      gap: 6px;
-      list-style: none;
-    }
-
-    .nav-item a {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      padding: 10px 14px;
-      border-radius: var(--radius-md, 8px);
-      color: var(--color-text-secondary, #9CA3AF);
-      font-weight: 500;
-      text-decoration: none;
-      transition: background 150ms ease, color 150ms ease;
-    }
-
-    .nav-item a:hover {
-      background: var(--color-bg-surface-hover, #232631);
-      color: var(--color-text-primary, #F3F4F6);
-    }
-
-    .nav-item.active a {
-      background: var(--color-accent-subtle, rgba(99, 102, 241, 0.15));
-      color: var(--color-accent, #6366F1);
-      font-weight: 600;
-    }
-
-    .nav-icon {
-      font-size: 1.2rem;
-    }
-
-    /* Main Workspace */
-    .main-content {
-      flex: 1;
-      display: flex;
-      flex-direction: column;
-      overflow-y: auto;
-      background-color: var(--color-bg-base, #121318);
-      position: relative;
-    }
-
-    .content-area {
-      flex: 1;
-      padding: var(--space-6, 24px);
-    }
-
-    /* Bottom Navigation Bar (Mobile) */
-    .bottom-nav {
-      display: none;
-      position: fixed;
-      bottom: 0;
-      left: 0;
-      right: 0;
-      height: 64px;
-      background: var(--color-bg-surface, #1A1C23);
-      border-top: 1px solid var(--color-border, #2E3242);
-      z-index: var(--z-sticky, 200);
-      justify-content: space-around;
-      align-items: center;
-    }
-
-    .bottom-nav a {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      gap: 4px;
-      color: var(--color-text-secondary, #9CA3AF);
-      font-size: 0.75rem;
-      text-decoration: none;
-    }
-
-    .bottom-nav a.active {
-      color: var(--color-accent, #6366F1);
-      font-weight: 600;
-    }
-
-    @media (max-width: 767px) {
-      .sidebar {
-        display: none;
-      }
-      .bottom-nav {
+  static styles = [
+    sharedStyles,
+    css`
+      :host {
         display: flex;
+        height: 100vh;
+        width: 100vw;
+        overflow: hidden;
+        background-color: var(--bg-primary);
       }
+
+      /* Desktop Layout */
+      .sidebar {
+        width: 240px;
+        background: var(--bg-secondary);
+        border-right: 1px solid var(--border);
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+        padding: var(--space-md);
+        transition: width var(--transition-base);
+        flex-shrink: 0;
+      }
+
+      .sidebar.collapsed {
+        width: 64px;
+        padding: var(--space-md) var(--space-xs);
+      }
+
+      .brand {
+        display: flex;
+        align-items: center;
+        gap: var(--space-sm);
+        font-size: 18px;
+        font-weight: 700;
+        color: var(--accent);
+        margin-bottom: var(--space-xl);
+      }
+
+      .nav-list {
+        display: flex;
+        flex-direction: column;
+        gap: var(--space-xs);
+        list-style: none;
+        padding: 0;
+        margin: 0;
+      }
+
+      .nav-item a {
+        display: flex;
+        align-items: center;
+        gap: var(--space-sm);
+        padding: var(--space-sm) var(--space-md);
+        border-radius: var(--radius-md);
+        color: var(--text-secondary);
+        font-weight: 500;
+        transition: background var(--transition-fast), color var(--transition-fast);
+      }
+
+      .nav-item a:hover {
+        background: var(--bg-tertiary);
+        color: var(--text-primary);
+      }
+
+      .nav-item a.active {
+        background: var(--accent-muted);
+        color: var(--accent);
+      }
+
+      .sidebar-footer {
+        display: flex;
+        flex-direction: column;
+        gap: var(--space-xs);
+        font-size: 12px;
+        color: var(--text-muted);
+        border-top: 1px solid var(--border);
+        padding-top: var(--space-sm);
+      }
+
+      .status-indicator {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+
+      .dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+      }
+      .dot-green { background: var(--success); }
+      .dot-blue { background: var(--accent); animation: pulse-computing 1s infinite; }
+
+      .main-wrapper {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        height: 100%;
+        overflow: hidden;
+      }
+
+      .top-app-bar {
+        display: none;
+        height: 56px;
+        background: var(--bg-secondary);
+        border-bottom: 1px solid var(--border);
+        align-items: center;
+        justify-content: space-between;
+        padding: 0 var(--space-md);
+      }
+
       .content-area {
-        padding-bottom: 80px;
+        flex: 1;
+        padding: var(--space-lg);
+        overflow: hidden;
       }
-    }
 
-    /* Header Bar */
-    .header-bar {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      padding: 16px 24px;
-      border-bottom: 1px solid var(--color-border, #2E3242);
-      background: var(--color-bg-surface, #1A1C23);
-    }
+      .bottom-nav {
+        display: none;
+        height: 56px;
+        background: var(--bg-secondary);
+        border-top: 1px solid var(--border);
+        justify-content: space-around;
+        align-items: center;
+      }
 
-    .page-title {
-      font-family: var(--font-family-display);
-      font-size: 1.25rem;
-      font-weight: 700;
-    }
-  `;
+      .bottom-nav a {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        font-size: 11px;
+        color: var(--text-secondary);
+      }
+
+      .bottom-nav a.active {
+        color: var(--accent);
+      }
+
+      /* Mobile Responsive Override */
+      @media (max-width: 1023px) {
+        .sidebar {
+          display: none;
+        }
+        .top-app-bar {
+          display: flex;
+        }
+        .bottom-nav {
+          display: flex;
+        }
+        .content-area {
+          padding: var(--space-md);
+        }
+      }
+    `
+  ];
+
+  static properties = {
+    collapsed: { type: Boolean },
+    mobileDrawerOpen: { type: Boolean },
+    currentHash: { type: String }
+  };
 
   constructor() {
     super();
-    this.currentRoute = this.getRouteFromHash();
-    this.onHashChange = this.onHashChange.bind(this);
+    this.appStateCtrl = new AppStateController(this);
+    this.collapsed = false;
+    this.mobileDrawerOpen = false;
+    this.currentHash = window.location.hash || '#/calendar';
+
+    this._onHashChange = () => {
+      this.currentHash = window.location.hash || '#/calendar';
+    };
   }
 
   connectedCallback() {
     super.connectedCallback();
-    appState.init();
-    window.addEventListener('hashchange', this.onHashChange);
-    this.unsubscribeState = appState.subscribe(() => this.requestUpdate());
+    window.addEventListener('hashchange', this._onHashChange);
   }
 
   disconnectedCallback() {
     super.disconnectedCallback();
-    window.removeEventListener('hashchange', this.onHashChange);
-    if (this.unsubscribeState) this.unsubscribeState();
+    window.removeEventListener('hashchange', this._onHashChange);
   }
 
-  getRouteFromHash() {
-    const hash = window.location.hash.replace('#', '') || 'calendar';
-    return hash;
+  async firstUpdated() {
+    await appState.init();
   }
 
-  onHashChange() {
-    this.currentRoute = this.getRouteFromHash();
-  }
-
-  isActive(route) {
-    return this.currentRoute === route;
-  }
-
-  renderRouteContent() {
-    switch (this.currentRoute) {
-      case 'tasks':
-        return this.renderPage('Tasks', html`<task-list-view></task-list-view>`);
-      case 'tags':
-        return this.renderPage('Tags', html`<tag-list-view></tag-list-view>`);
-      case 'history':
-        return this.renderPage('History', html`<history-view></history-view>`);
-      case 'settings':
-        return this.renderPage('Settings', html`<settings-view></settings-view>`);
-      case 'calendar':
-      default:
-        return this.renderPage('Calendar', html`<calendar-view></calendar-view>`);
+  _isRouteActive(path) {
+    const current = this.currentHash || '#/calendar';
+    if (path === '/' || path === '/calendar') {
+      return current === '#/' || current === '#/calendar' || current === '';
     }
+    return current === `#${path}`;
   }
 
-  renderPage(title, content) {
-    return html`
-      <div class="header-bar">
-        <h1 class="page-title">${title}</h1>
-        <div style="display: flex; align-items: center; gap: 8px;">
-          <span class="badge badge-accent">Offline-First IDB</span>
-        </div>
-      </div>
-      <div class="content-area">
-        ${content}
-      </div>
-    `;
+  _renderRoute() {
+    const hash = this.currentHash || '#/calendar';
+
+    if (hash === '#/tasks') {
+      return html`<crono-task-list-view></crono-task-list-view>`;
+    }
+    if (hash === '#/tags') {
+      return html`<crono-tag-list-view></crono-tag-list-view>`;
+    }
+    if (hash === '#/history') {
+      return html`<crono-history-view></crono-history-view>`;
+    }
+    if (hash === '#/settings') {
+      return html`<crono-settings-view></crono-settings-view>`;
+    }
+    return html`<crono-calendar-view></crono-calendar-view>`;
   }
 
   render() {
+    const statusState = scheduleState.status; // 'idle' | 'computing'
+
     return html`
-      <!-- Desktop Sidebar -->
-      <aside class="sidebar">
+      <!-- Sidebar Desktop -->
+      <aside class="sidebar ${this.collapsed ? 'collapsed' : ''}">
         <div>
           <div class="brand">
-            <div class="brand-logo">C</div>
-            <div class="brand-title">Cronograma</div>
+            <span>⏱</span>
+            ${this.collapsed ? '' : 'Cronograma'}
           </div>
+
           <ul class="nav-list">
-            <li class="nav-item ${this.isActive('calendar') ? 'active' : ''}">
-              <a href="#calendar">
-                <span class="nav-icon">📅</span>
-                <span>Calendar</span>
+            <li class="nav-item">
+              <a href="#/calendar" class="${this._isRouteActive('/calendar') ? 'active' : ''}">
+                <span>📅</span>
+                ${this.collapsed ? '' : 'Calendar'}
               </a>
             </li>
-            <li class="nav-item ${this.isActive('tasks') ? 'active' : ''}">
-              <a href="#tasks">
-                <span class="nav-icon">📋</span>
-                <span>Tasks</span>
+            <li class="nav-item">
+              <a href="#/tasks" class="${this._isRouteActive('/tasks') ? 'active' : ''}">
+                <span>✅</span>
+                ${this.collapsed ? '' : 'Tasks'}
               </a>
             </li>
-            <li class="nav-item ${this.isActive('tags') ? 'active' : ''}">
-              <a href="#tags">
-                <span class="nav-icon">🏷️</span>
-                <span>Tags</span>
+            <li class="nav-item">
+              <a href="#/tags" class="${this._isRouteActive('/tags') ? 'active' : ''}">
+                <span>🏷️</span>
+                ${this.collapsed ? '' : 'Tags'}
               </a>
             </li>
-            <li class="nav-item ${this.isActive('history') ? 'active' : ''}">
-              <a href="#history">
-                <span class="nav-icon">📜</span>
-                <span>History</span>
+            <li class="nav-item">
+              <a href="#/history" class="${this._isRouteActive('/history') ? 'active' : ''}">
+                <span>📊</span>
+                ${this.collapsed ? '' : 'History'}
               </a>
             </li>
-            <li class="nav-item ${this.isActive('settings') ? 'active' : ''}">
-              <a href="#settings">
-                <span class="nav-icon">⚙️</span>
-                <span>Settings</span>
+            <li class="nav-item">
+              <a href="#/settings" class="${this._isRouteActive('/settings') ? 'active' : ''}">
+                <span>⚙️</span>
+                ${this.collapsed ? '' : 'Settings'}
               </a>
             </li>
           </ul>
         </div>
-        <div style="font-size: var(--font-size-xs); color: var(--color-text-muted); padding: 8px 12px;">
-          Cronograma v1.0.0
+
+        <div class="sidebar-footer">
+          <div class="status-indicator">
+            <div class="dot ${statusState === 'computing' ? 'dot-blue' : 'dot-green'}"></div>
+            ${this.collapsed ? '' : statusState === 'computing' ? 'Scheduler computing...' : 'Scheduler idle'}
+          </div>
+          ${this.collapsed ? '' : html`<div>Single-device local DB</div>`}
         </div>
       </aside>
 
-      <!-- Main Workspace -->
-      <main class="main-content">
-        ${this.renderRouteContent()}
-      </main>
+      <!-- Main Layout Container -->
+      <div class="main-wrapper">
+        <!-- Top App Bar Mobile -->
+        <header class="top-app-bar">
+          <button class="crono-btn crono-btn-icon" @click=${() => this.mobileDrawerOpen = !this.mobileDrawerOpen}>☰</button>
+          <span style="font-weight: 700; color: var(--accent);">Cronograma</span>
+          <div class="status-indicator">
+            <div class="dot ${statusState === 'computing' ? 'dot-blue' : 'dot-green'}"></div>
+          </div>
+        </header>
 
-      <!-- Mobile Bottom Nav -->
-      <nav class="bottom-nav">
-        <a href="#calendar" class="${this.isActive('calendar') ? 'active' : ''}">
-          <span>📅</span>
-          <span>Calendar</span>
-        </a>
-        <a href="#tasks" class="${this.isActive('tasks') ? 'active' : ''}">
-          <span>📋</span>
-          <span>Tasks</span>
-        </a>
-        <a href="#tags" class="${this.isActive('tags') ? 'active' : ''}">
-          <span>🏷️</span>
-          <span>Tags</span>
-        </a>
-        <a href="#history" class="${this.isActive('history') ? 'active' : ''}">
-          <span>📜</span>
-          <span>History</span>
-        </a>
-        <a href="#settings" class="${this.isActive('settings') ? 'active' : ''}">
-          <span>⚙️</span>
-          <span>Settings</span>
-        </a>
-      </nav>
+        <!-- Main View Outlet -->
+        <main class="content-area">
+          ${this._renderRoute()}
+        </main>
+
+        <!-- Bottom Nav Bar Mobile -->
+        <nav class="bottom-nav">
+          <a href="#/calendar" class="${this._isRouteActive('/calendar') ? 'active' : ''}">
+            <span style="font-size: 18px;">📅</span>
+            <span>Calendar</span>
+          </a>
+          <a href="#/tasks" class="${this._isRouteActive('/tasks') ? 'active' : ''}">
+            <span style="font-size: 18px;">✅</span>
+            <span>Tasks</span>
+          </a>
+        </nav>
+      </div>
+
+      <!-- Mobile Hamburger Drawer -->
+      <crono-drawer-panel
+        .open=${this.mobileDrawerOpen}
+        title="Menu"
+        @crono-drawer:close=${() => this.mobileDrawerOpen = false}
+      >
+        <ul class="nav-list">
+          <li class="nav-item" @click=${() => this.mobileDrawerOpen = false}>
+            <a href="#/tags" class="${this._isRouteActive('/tags') ? 'active' : ''}">
+              <span>🏷️</span> Tags
+            </a>
+          </li>
+          <li class="nav-item" @click=${() => this.mobileDrawerOpen = false}>
+            <a href="#/history" class="${this._isRouteActive('/history') ? 'active' : ''}">
+              <span>📊</span> History
+            </a>
+          </li>
+          <li class="nav-item" @click=${() => this.mobileDrawerOpen = false}>
+            <a href="#/settings" class="${this._isRouteActive('/settings') ? 'active' : ''}">
+              <span>⚙️</span> Settings
+            </a>
+          </li>
+        </ul>
+      </crono-drawer-panel>
+
+      <!-- Global Toast Container -->
+      <crono-toast-notification></crono-toast-notification>
     `;
   }
 }

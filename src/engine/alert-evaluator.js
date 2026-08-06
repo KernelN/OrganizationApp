@@ -1,69 +1,54 @@
-/**
- * Red and Orange alert evaluator for tasks and deadlines.
- */
+import { diffHours } from '../utils/date-utils.js';
 
 /**
- * Compute alert level ('none' | 'orange' | 'red') for a task.
+ * Computes slack time for a task in hours: deadline - now - duration_hours.
  * @param {Object} task 
- * @param {Date} now 
- * @param {number} availableWorkMinutesBeforeDeadline 
- * @returns {'none' | 'orange' | 'red'}
+ * @param {Date|string} now 
+ * @returns {number} slack in hours (Infinity if no deadline)
  */
-export function computeTaskAlertLevel(task, now, availableWorkMinutesBeforeDeadline) {
+export function computeSlack(task, now) {
+  if (!task.deadline) return Infinity;
+  const hoursUntilDeadline = diffHours(now, task.deadline);
+  return hoursUntilDeadline - task.duration_hours;
+}
+
+/**
+ * Computes Red/Orange/None alert level for a task.
+ * @param {Object} task 
+ * @param {Date|string} now 
+ * @param {Array} allSlots 
+ * @returns {'red'|'orange'|'none'}
+ */
+export function computeAlertLevel(task, now, allSlots = []) {
   if (!task.deadline) {
     return 'none';
   }
 
-  const deadlineDate = new Date(task.deadline);
-  if (deadlineDate <= now) {
-    return 'red'; // Deadline passed
-  }
+  const nowMs = new Date(now).getTime();
+  const deadlineMs = new Date(task.deadline).getTime();
 
-  const durationMinutes = task.duration_hours != null ? task.duration_hours * 60 : (task.duration_minutes || 30);
-
-  // Red Alert: Not enough available work time before deadline to fulfill task duration
-  if (availableWorkMinutesBeforeDeadline < durationMinutes) {
+  if (deadlineMs <= nowMs) {
     return 'red';
   }
 
-  // Orange Alert: Within configured alert window
-  const alertWindowMinutes = getAlertWindowMinutes(task);
-  if (alertWindowMinutes != null && alertWindowMinutes > 0) {
-    const alertStartTime = deadlineDate.getTime() - (alertWindowMinutes * 60 * 1000);
-    if (now.getTime() >= alertStartTime) {
+  // Count available slot hours between now and deadline
+  const availableSlotsBeforeDeadline = allSlots.filter(s => {
+    const sStart = new Date(s.start).getTime();
+    return sStart >= nowMs && sStart < deadlineMs && (!s.is_break || task.ignore_breaks);
+  });
+
+  const availableHours = availableSlotsBeforeDeadline.reduce((acc, s) => acc + s.duration_hours, 0);
+
+  if (availableHours < task.duration_hours) {
+    return 'red';
+  }
+
+  if (typeof task.alert_window_hours === 'number' && task.alert_window_hours > 0) {
+    const alertStartMs = deadlineMs - (task.alert_window_hours * 60 * 60 * 1000);
+    if (nowMs >= alertStartMs) {
       return 'orange';
     }
   }
 
   return 'none';
-}
-
-/**
- * Compute total alert window in minutes from task object.
- * @param {Object} task 
- * @returns {number|null}
- */
-export function getAlertWindowMinutes(task) {
-  if (task.alert_window_hours != null) {
-    return task.alert_window_hours * 60;
-  }
-  if (task.alert_window_minutes != null) {
-    return task.alert_window_minutes;
-  }
-  return null;
-}
-
-/**
- * Compute remaining slack time in minutes for priority queue sorting.
- * @param {Object} task 
- * @param {Date} now 
- * @returns {number} Slack in minutes (infinity if no deadline)
- */
-export function computeTaskSlack(task, now) {
-  if (!task.deadline) return Number.POSITIVE_INFINITY;
-  const deadlineMs = new Date(task.deadline).getTime();
-  const nowMs = now.getTime();
-  const totalMinutesUntilDeadline = Math.max(0, Math.floor((deadlineMs - nowMs) / 60000));
-  const durationMinutes = task.duration_hours != null ? task.duration_hours * 60 : (task.duration_minutes || 30);
-  return totalMinutesUntilDeadline - durationMinutes;
 }

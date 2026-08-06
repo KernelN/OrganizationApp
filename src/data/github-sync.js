@@ -1,89 +1,124 @@
 import { Octokit } from '@octokit/rest';
-import { appState } from '../state/app-state.js';
+import { SyncError } from '../utils/errors.js';
 
 export class GitHubSync {
-  constructor(syncSettings = {}) {
-    this.enabled = syncSettings.enabled ?? false;
-    this.pat = syncSettings.pat || '';
-    this.owner = syncSettings.repo_owner || '';
-    this.repo = syncSettings.repo_name || '';
-    this.branch = syncSettings.branch || 'main';
-    this.dataPath = syncSettings.data_path || 'data/';
+  constructor(config = {}) {
+    this.config = config;
+    this.octokit = config.pat ? new Octokit({ auth: config.pat }) : null;
+  }
 
-    this.octokit = this.pat ? new Octokit({ auth: this.pat }) : null;
+  updateConfig(config) {
+    this.config = config;
+    this.octokit = config.pat ? new Octokit({ auth: config.pat }) : null;
+  }
+
+  isConfigured() {
+    return !!(
+      this.config.enabled &&
+      this.config.pat &&
+      this.config.repo_owner &&
+      this.config.repo_name
+    );
   }
 
   async testConnection() {
-    if (!this.pat || !this.owner || !this.repo) {
-      return { valid: false, error: 'Missing PAT, Owner, or Repo name' };
+    if (!this.config.pat || !this.config.repo_owner || !this.config.repo_name) {
+      return { valid: false, error: 'Missing GitHub configuration fields.' };
     }
-
     try {
-      const client = new Octokit({ auth: this.pat });
-      const res = await client.rest.repos.get({
-        owner: this.owner,
-        repo: this.repo
+      const octokit = new Octokit({ auth: this.config.pat });
+      const res = await octokit.rest.repos.get({
+        owner: this.config.repo_owner,
+        repo: this.config.repo_name
       });
-
-      if (res.status === 200) {
-        return { valid: true, repoName: res.data.full_name };
-      }
-      return { valid: false, error: `HTTP ${res.status}` };
+      return { valid: res.status === 200 };
     } catch (err) {
-      return { valid: false, error: err.message || 'Connection failed' };
+      return { valid: false, error: err.message || 'Failed to authenticate with GitHub API.' };
     }
   }
 
-  async push() {
-    if (!this.enabled || !this.pat || !this.owner || !this.repo) {
-      return { success: false, reason: 'Sync not enabled or configured' };
-    }
-
+  async push(dal) {
+    if (!this.isConfigured()) return;
     try {
-      const client = new Octokit({ auth: this.pat });
-      const storesData = {
-        'tasks.json': appState.tasks,
-        'tags.json': appState.tags,
-        'dependencies.json': appState.dependencies,
-        'settings.json': appState.settings
+      const data = await dal.exportAll();
+      const files = {
+        'tasks.json': JSON.stringify(data.tasks, null, 2),
+        'tags.json': JSON.stringify(data.tags, null, 2),
+        'dependencies.json': JSON.stringify(data.dependencies, null, 2),
+        'time_logs.json': JSON.stringify(data.time_logs, null, 2),
+        'settings.json': JSON.stringify(data.settings, null, 2)
       };
 
-      for (const [filename, data] of Object.entries(storesData)) {
-        const filePath = `${this.dataPath.replace(/\/$/, '')}/${filename}`;
-        const contentStr = JSON.stringify(data, null, 2);
-        const contentEncoded = btoa(unescape(encodeURIComponent(contentStr)));
+      const owner = this.config.repo_owner;
+      const repo = this.config.repo_name;
+      const branch = this.config.branch || 'main';
+      const basePath = (this.config.data_path || 'data/').replace(/\/$/, '') + '/';
 
-        // Get existing file SHA if present
-        let sha = undefined;
+      for (const [filename, content] of Object.entries(files)) {
+        const filePath = `${basePath}${filename}`;
+        let sha = null;
+
         try {
-          const existing = await client.rest.repos.getContent({
-            owner: this.owner,
-            repo: this.repo,
+          const { data: fileData } = await this.octokit.rest.repos.getContent({
+            owner,
+            repo,
             path: filePath,
-            ref: this.branch
+            ref: branch
           });
-          if (existing.data?.sha) {
-            sha = existing.data.sha;
+          if (fileData && fileData.sha) {
+            sha = fileData.sha;
           }
-        } catch {
-          // File does not exist yet, will be created
+        } catch (e) {
+          // File does not exist yet; sha remains null
         }
 
-        await client.rest.repos.createOrUpdateFileContents({
-          owner: this.owner,
-          repo: this.repo,
+        const contentEncoded = btoa(unescape(encodeURIComponent(content)));
+        await this.octokit.rest.repos.createOrUpdateFileContents({
+          owner,
+          repo,
           path: filePath,
           message: `Cronograma sync: ${new Date().toISOString()}`,
           content: contentEncoded,
-          branch: this.branch,
-          sha
+          sha: sha || undefined,
+          branch
         });
       }
-
-      return { success: true, timestamp: new Date().toISOString() };
     } catch (err) {
-      console.error('[GitHub Sync Error]:', err);
-      return { success: false, error: err.message };
+      throw new SyncError(`GitHub push failed: ${err.message}`);
+    }
+  }
+
+  async pull(dal) {
+    if (!this.isConfigured()) {
+      throw new SyncError('GitHub sync is not configured.');
+    }
+    try {
+      const owner = this.config.repo_owner;
+      const repo = this.config.repo_name;
+      const branch = this.config.branch || 'main';
+      const basePath = (this.config.data_path || 'data/').replace(/\/$/, '') + '/';
+
+      const filenames = ['tasks.json', 'tags.json', 'dependencies.json', 'time_logs.json', 'settings.json'];
+      const importedData = {};
+
+      for (const filename of filenames) {
+        const filePath = `${basePath}${filename}`;
+        const key = filename.replace('.json', '');
+
+        const { data: fileData } = await this.octokit.rest.repos.getContent({
+          owner,
+          repo,
+          path: filePath,
+          ref: branch
+        });
+
+        const decodedContent = decodeURIComponent(escape(atob(fileData.content.replace(/\n/g, ''))));
+        importedData[key] = JSON.parse(decodedContent);
+      }
+
+      await dal.importAll(importedData);
+    } catch (err) {
+      throw new SyncError(`GitHub pull failed: ${err.message}`);
     }
   }
 }

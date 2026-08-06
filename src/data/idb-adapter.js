@@ -1,256 +1,387 @@
 import { openDB } from 'idb';
 import { DataAccessLayer } from './dal.js';
-import { DB_NAME, DB_VERSION, STORES, DEFAULT_SETTINGS } from './schemas.js';
-import { ulid } from '../utils/ulid.js';
+import { validateTask, validateTag, validateDependency } from './schemas.js';
+import { generateULID } from '../utils/ulid.js';
+import { CycleDetectedError } from '../utils/errors.js';
+import { detectCycleFromDependencies } from '../engine/dependency-resolver.js';
+
+const DB_NAME = 'cronograma_db';
+const DB_VERSION = 2;
+const SETTINGS_KEY = 'user_settings';
+
+export const DEFAULT_SETTINGS = {
+  key: SETTINGS_KEY,
+  work_windows: {
+    monday:    [{ start: "09:00", end: "17:00" }],
+    tuesday:   [{ start: "09:00", end: "17:00" }],
+    wednesday: [{ start: "09:00", end: "17:00" }],
+    thursday:  [{ start: "09:00", end: "17:00" }],
+    friday:    [{ start: "09:00", end: "17:00" }],
+    saturday:  [],
+    sunday:    []
+  },
+  break_windows: {
+    monday:    [],
+    tuesday:   [],
+    wednesday: [],
+    thursday:  [],
+    friday:    [],
+    saturday:  [],
+    sunday:    []
+  },
+  scheduler_interval_minutes: 5,
+  scheduling_horizon_days: 7,
+  slot_granularity_minutes: 15,
+  accent_color: '#6366F1',
+  completed_history_limit: 100,
+  default_accumulation_cap: 5,
+  default_splittable: true,
+  locale: 'en',
+  github_sync: {
+    enabled: false,
+    pat: '',
+    repo_owner: '',
+    repo_name: '',
+    branch: 'main',
+    data_path: 'data/'
+  },
+  schema_version: 1
+};
 
 export class IndexedDBAdapter extends DataAccessLayer {
   constructor() {
     super();
-    this.dbPromise = this.initDB();
+    this.dbPromise = this._initDB();
   }
 
-  async initDB() {
+  async _initDB() {
     return openDB(DB_NAME, DB_VERSION, {
-      upgrade(db) {
-        if (!db.objectStoreNames.contains(STORES.TASKS)) {
-          const taskStore = db.createObjectStore(STORES.TASKS, { keyPath: 'id' });
+      upgrade(db, oldVersion) {
+        // Tasks store
+        if (!db.objectStoreNames.contains('tasks')) {
+          const taskStore = db.createObjectStore('tasks', { keyPath: 'id' });
           taskStore.createIndex('status', 'status', { unique: false });
+          taskStore.createIndex('deadline', 'deadline', { unique: false });
+          taskStore.createIndex('priority', 'priority', { unique: false });
           taskStore.createIndex('parent_task_id', 'parent_task_id', { unique: false });
         }
-        if (!db.objectStoreNames.contains(STORES.TAGS)) {
-          db.createObjectStore(STORES.TAGS, { keyPath: 'id' });
+
+        // Tags store
+        if (!db.objectStoreNames.contains('tags')) {
+          const tagStore = db.createObjectStore('tags', { keyPath: 'id' });
+          tagStore.createIndex('name', 'name', { unique: false });
         }
-        if (!db.objectStoreNames.contains(STORES.DEPENDENCIES)) {
-          const depStore = db.createObjectStore(STORES.DEPENDENCIES, { keyPath: 'id' });
+
+        // Dependencies store
+        if (!db.objectStoreNames.contains('dependencies')) {
+          const depStore = db.createObjectStore('dependencies', { keyPath: 'id' });
           depStore.createIndex('task_id', 'task_id', { unique: false });
           depStore.createIndex('depends_on_id', 'depends_on_id', { unique: false });
-          depStore.createIndex('compound', ['task_id', 'depends_on_id'], { unique: true });
         }
-        if (!db.objectStoreNames.contains(STORES.TIME_LOGS)) {
-          const logStore = db.createObjectStore(STORES.TIME_LOGS, { keyPath: 'id' });
+
+        // Time logs store
+        if (!db.objectStoreNames.contains('time_logs')) {
+          const logStore = db.createObjectStore('time_logs', { keyPath: 'id' });
           logStore.createIndex('task_id', 'task_id', { unique: false });
+          logStore.createIndex('logged_at', 'logged_at', { unique: false });
         }
-        if (!db.objectStoreNames.contains(STORES.SETTINGS)) {
-          db.createObjectStore(STORES.SETTINGS, { keyPath: 'id' });
+
+        // Settings store
+        if (db.objectStoreNames.contains('settings')) {
+          db.deleteObjectStore('settings');
         }
+        db.createObjectStore('settings', { keyPath: 'key' });
       }
-    }).then(async (db) => {
-      // Initialize default settings if missing
-      const existingSettings = await db.get(STORES.SETTINGS, 'global_settings');
-      if (!existingSettings) {
-        await db.put(STORES.SETTINGS, DEFAULT_SETTINGS);
-      }
-      return db;
     });
   }
 
-  // --- Tasks ---
-  async getTasks() {
+  /* ── Tasks ── */
+  async getTasks(filter = {}) {
     const db = await this.dbPromise;
-    return db.getAll(STORES.TASKS);
+    let tasks = await db.getAll('tasks');
+
+    if (filter.status) {
+      tasks = tasks.filter(t => t.status === filter.status);
+    }
+    if (filter.tag_id) {
+      tasks = tasks.filter(t => Array.isArray(t.tag_ids) && t.tag_ids.includes(filter.tag_id));
+    }
+    if (typeof filter.priority_gte === 'number') {
+      tasks = tasks.filter(t => t.priority >= filter.priority_gte);
+    }
+    return tasks;
   }
 
-  async getTask(id) {
+  async getTaskById(id) {
     const db = await this.dbPromise;
-    return db.get(STORES.TASKS, id);
+    return (await db.get('tasks', id)) || null;
   }
 
-  async createTask(task) {
-    const db = await this.dbPromise;
+  async createTask(taskData) {
+    validateTask(taskData);
     const now = new Date().toISOString();
-    const newTask = {
-      id: task.id || ulid(),
-      title: task.title,
-      description: task.description || '',
-      color: task.color || '#6366F1',
-      priority: task.priority ?? 0,
-      tag_ids: task.tag_ids || [],
-      deadline: task.deadline || null,
-      alert_window_minutes: task.alert_window_minutes ?? null,
-      duration_minutes: task.duration_minutes || 30,
-      splittable: task.splittable ?? true,
-      ignore_breaks: task.ignore_breaks ?? false,
-      recurrence: task.recurrence || null,
-      manual_schedule: task.manual_schedule || null,
-      status: task.status || 'active',
-      completed_at: task.completed_at || null,
-      created_at: task.created_at || now,
+    const task = {
+      id: generateULID(),
+      title: taskData.title,
+      description: taskData.description || '',
+      color: taskData.color || '#6366F1',
+      priority: typeof taskData.priority === 'number' ? taskData.priority : 0,
+      tag_ids: Array.isArray(taskData.tag_ids) ? taskData.tag_ids : [],
+      deadline: taskData.deadline || null,
+      alert_window_hours: taskData.alert_window_hours ?? null,
+      duration_hours: taskData.duration_hours,
+      splittable: taskData.splittable ?? true,
+      ignore_breaks: taskData.ignore_breaks ?? false,
+      recurrence: taskData.recurrence || null,
+      manual_schedule: taskData.manual_schedule || null,
+      status: 'active',
+      completed_at: null,
+      created_at: now,
       updated_at: now,
-      parent_task_id: task.parent_task_id || null,
-      accumulated_count: task.accumulated_count || 0
+      parent_task_id: taskData.parent_task_id || null,
+      accumulated_count: taskData.accumulated_count || 0
     };
-    await db.put(STORES.TASKS, newTask);
-    return newTask;
+
+    const db = await this.dbPromise;
+    await db.put('tasks', task);
+    return task;
   }
 
   async updateTask(id, updates) {
     const db = await this.dbPromise;
-    const existing = await db.get(STORES.TASKS, id);
-    if (!existing) throw new Error(`Task ${id} not found`);
+    const existing = await db.get('tasks', id);
+    if (!existing) {
+      throw new Error(`Task with id ${id} not found`);
+    }
+
     const updated = {
       ...existing,
       ...updates,
+      id,
       updated_at: new Date().toISOString()
     };
-    await db.put(STORES.TASKS, updated);
+    validateTask(updated);
+
+    await db.put('tasks', updated);
     return updated;
   }
 
   async deleteTask(id) {
     const db = await this.dbPromise;
-    const tx = db.transaction([STORES.TASKS, STORES.DEPENDENCIES, STORES.TIME_LOGS], 'readwrite');
-    await tx.objectStore(STORES.TASKS).delete(id);
-    
-    // Cleanup associated dependencies
-    const depStore = tx.objectStore(STORES.DEPENDENCIES);
-    const deps = await depStore.getAll();
-    for (const dep of deps) {
+    const tx = db.transaction(['tasks', 'dependencies', 'time_logs'], 'readwrite');
+    await tx.objectStore('tasks').delete(id);
+
+    // Delete dependencies referencing this task
+    const depStore = tx.objectStore('dependencies');
+    const allDeps = await depStore.getAll();
+    for (const dep of allDeps) {
       if (dep.task_id === id || dep.depends_on_id === id) {
         await depStore.delete(dep.id);
       }
     }
+
+    // Delete time logs for this task
+    const logStore = tx.objectStore('time_logs');
+    const allLogs = await logStore.getAll();
+    for (const log of allLogs) {
+      if (log.task_id === id) {
+        await logStore.delete(log.id);
+      }
+    }
+
     await tx.done;
   }
 
-  // --- Tags ---
+  async completeTask(id) {
+    const now = new Date().toISOString();
+    const updated = await this.updateTask(id, {
+      status: 'completed',
+      completed_at: now
+    });
+
+    const settings = await this.getSettings();
+    await this._enforceHistoryLimit(settings.completed_history_limit);
+    return updated;
+  }
+
+  async getCompletedTasks() {
+    const db = await this.dbPromise;
+    const tasks = await db.getAllFromIndex('tasks', 'status', 'completed');
+    return tasks.sort((a, b) => new Date(b.completed_at || 0) - new Date(a.completed_at || 0));
+  }
+
+  async _enforceHistoryLimit(limit = 100) {
+    const completed = await this.getCompletedTasks();
+    if (completed.length > limit) {
+      const excess = completed.slice(limit);
+      for (const task of excess) {
+        await this.deleteTask(task.id);
+      }
+    }
+  }
+
+  /* ── Tags ── */
   async getTags() {
     const db = await this.dbPromise;
-    return db.getAll(STORES.TAGS);
+    return await db.getAll('tags');
   }
 
-  async getTag(id) {
+  async getTagById(id) {
     const db = await this.dbPromise;
-    return db.get(STORES.TAGS, id);
+    return (await db.get('tags', id)) || null;
   }
 
-  async createTag(tag) {
-    const db = await this.dbPromise;
+  async createTag(tagData) {
+    validateTag(tagData);
     const now = new Date().toISOString();
-    const newTag = {
-      id: tag.id || ulid(),
-      name: tag.name,
-      color: tag.color || '#3B82F6',
-      duration_minutes: tag.duration_minutes ?? null,
-      deadline: tag.deadline || null,
-      start_date: tag.start_date || null,
-      needs_dedicated_timeslot: tag.needs_dedicated_timeslot ?? false,
-      time_window_mode: tag.time_window_mode || 'none',
-      time_windows: tag.time_windows || {},
-      auto_expand_config: tag.auto_expand_config || null,
+    const tag = {
+      id: generateULID(),
+      name: tagData.name,
+      color: tagData.color,
+      duration_hours: tagData.duration_hours ?? null,
+      deadline: tagData.deadline || null,
+      start_date: tagData.start_date || null,
+      needs_dedicated_timeslot: tagData.needs_dedicated_timeslot ?? false,
+      time_window_mode: tagData.time_window_mode || 'none',
+      time_windows: tagData.time_windows || {},
+      auto_expand_config: tagData.auto_expand_config || null,
       created_at: now,
       updated_at: now
     };
-    await db.put(STORES.TAGS, newTag);
-    return newTag;
+
+    const db = await this.dbPromise;
+    await db.put('tags', tag);
+    return tag;
   }
 
   async updateTag(id, updates) {
     const db = await this.dbPromise;
-    const existing = await db.get(STORES.TAGS, id);
-    if (!existing) throw new Error(`Tag ${id} not found`);
+    const existing = await db.get('tags', id);
+    if (!existing) {
+      throw new Error(`Tag with id ${id} not found`);
+    }
+
     const updated = {
       ...existing,
       ...updates,
+      id,
       updated_at: new Date().toISOString()
     };
-    await db.put(STORES.TAGS, updated);
+    validateTag(updated);
+
+    await db.put('tags', updated);
     return updated;
   }
 
   async deleteTag(id) {
     const db = await this.dbPromise;
-    await db.delete(STORES.TAGS, id);
-  }
+    const tx = db.transaction(['tags', 'tasks'], 'readwrite');
+    await tx.objectStore('tags').delete(id);
 
-  // --- Dependencies & Cycle Detection ---
-  async getDependencies() {
-    const db = await this.dbPromise;
-    return db.getAll(STORES.DEPENDENCIES);
-  }
-
-  async addDependency(taskId, dependsOnId, type = 'hard') {
-    if (taskId === dependsOnId) {
-      throw new Error('A task cannot depend on itself');
-    }
-    const db = await this.dbPromise;
-    const allDeps = await db.getAll(STORES.DEPENDENCIES);
-
-    // Check if adding this edge introduces a cycle (DFS traversal)
-    if (this._hasCycle(taskId, dependsOnId, allDeps)) {
-      throw new Error('Adding this dependency creates a cyclic dependency loop');
-    }
-
-    const newDep = {
-      id: ulid(),
-      task_id: taskId,
-      depends_on_id: dependsOnId,
-      type,
-      created_at: new Date().toISOString()
-    };
-    await db.put(STORES.DEPENDENCIES, newDep);
-    return newDep;
-  }
-
-  async removeDependency(id) {
-    const db = await this.dbPromise;
-    await db.delete(STORES.DEPENDENCIES, id);
-  }
-
-  _hasCycle(taskId, dependsOnId, existingDeps) {
-    // Adjacency list: task -> array of prerequisite tasks
-    const graph = new Map();
-    for (const dep of existingDeps) {
-      if (!graph.has(dep.task_id)) graph.set(dep.task_id, []);
-      graph.get(dep.task_id).push(dep.depends_on_id);
-    }
-    if (!graph.has(taskId)) graph.set(taskId, []);
-    graph.get(taskId).push(dependsOnId);
-
-    // DFS starting from dependsOnId to see if we can reach taskId
-    const visited = new Set();
-    const stack = [dependsOnId];
-
-    while (stack.length > 0) {
-      const current = stack.pop();
-      if (current === taskId) return true; // Cycle detected!
-      if (!visited.has(current)) {
-        visited.add(current);
-        const neighbors = graph.get(current) || [];
-        for (const neighbor of neighbors) {
-          stack.push(neighbor);
-        }
+    // Remove tag_id from associated tasks
+    const taskStore = tx.objectStore('tasks');
+    const allTasks = await taskStore.getAll();
+    for (const task of allTasks) {
+      if (Array.isArray(task.tag_ids) && task.tag_ids.includes(id)) {
+        task.tag_ids = task.tag_ids.filter(tId => tId !== id);
+        await taskStore.put(task);
       }
     }
-    return false;
+
+    await tx.done;
   }
 
-  // --- Time Logs ---
-  async getTimeLogs(taskId = null) {
+  /* ── Dependencies ── */
+  async getDependencies() {
     const db = await this.dbPromise;
-    if (taskId) {
-      return db.getAllFromIndex(STORES.TIME_LOGS, 'task_id', taskId);
+    return await db.getAll('dependencies');
+  }
+
+  async getDependenciesForTask(taskId) {
+    const db = await this.dbPromise;
+    const all = await db.getAll('dependencies');
+    return all.filter(d => d.task_id === taskId || d.depends_on_id === taskId);
+  }
+
+  async createDependency(depData) {
+    validateDependency(depData);
+
+    const db = await this.dbPromise;
+    const existingDeps = await db.getAll('dependencies');
+
+    // Duplicate check
+    const duplicate = existingDeps.find(
+      d => d.task_id === depData.task_id && d.depends_on_id === depData.depends_on_id
+    );
+    if (duplicate) {
+      return duplicate;
     }
-    return db.getAll(STORES.TIME_LOGS);
-  }
 
-  async createTimeLog(timeLog) {
-    const db = await this.dbPromise;
-    const newLog = {
-      id: timeLog.id || ulid(),
-      task_id: timeLog.task_id,
-      logged_minutes: timeLog.logged_minutes,
-      notes: timeLog.notes || '',
-      logged_at: timeLog.logged_at || new Date().toISOString()
+    // Cycle detection check
+    const hasCycle = detectCycleFromDependencies(existingDeps, depData);
+    if (hasCycle) {
+      throw new CycleDetectedError(`Adding dependency creates a cycle between ${depData.task_id} and ${depData.depends_on_id}`);
+    }
+
+    const dep = {
+      id: generateULID(),
+      task_id: depData.task_id,
+      depends_on_id: depData.depends_on_id,
+      type: depData.type,
+      created_at: new Date().toISOString()
     };
-    await db.put(STORES.TIME_LOGS, newLog);
-    return newLog;
+
+    await db.put('dependencies', dep);
+    return dep;
   }
 
-  // --- Settings ---
+  async deleteDependency(id) {
+    const db = await this.dbPromise;
+    await db.delete('dependencies', id);
+  }
+
+  /* ── Time Logs ── */
+  async getTimeLogs(filter = {}) {
+    const db = await this.dbPromise;
+    let logs = await db.getAll('time_logs');
+    if (filter.task_id) {
+      logs = logs.filter(l => l.task_id === filter.task_id);
+    }
+    return logs;
+  }
+
+  async createTimeLog(logData) {
+    if (!logData.task_id || typeof logData.logged_hours !== 'number') {
+      throw new Error('Time log requires task_id and logged_hours');
+    }
+    const log = {
+      id: generateULID(),
+      task_id: logData.task_id,
+      logged_hours: logData.logged_hours,
+      notes: logData.notes || '',
+      logged_at: logData.logged_at || new Date().toISOString()
+    };
+
+    const db = await this.dbPromise;
+    await db.put('time_logs', log);
+    return log;
+  }
+
+  async deleteTimeLog(id) {
+    const db = await this.dbPromise;
+    await db.delete('time_logs', id);
+  }
+
+  /* ── Settings ── */
   async getSettings() {
     const db = await this.dbPromise;
-    const settings = await db.get(STORES.SETTINGS, 'global_settings');
-    return settings || DEFAULT_SETTINGS;
+    const settings = await db.get('settings', SETTINGS_KEY);
+    if (!settings) {
+      const defaultWithKey = { ...DEFAULT_SETTINGS, key: SETTINGS_KEY };
+      await db.put('settings', defaultWithKey);
+      return defaultWithKey;
+    }
+    return settings;
   }
 
   async updateSettings(updates) {
@@ -258,9 +389,53 @@ export class IndexedDBAdapter extends DataAccessLayer {
     const current = await this.getSettings();
     const updated = {
       ...current,
-      ...updates
+      ...updates,
+      key: SETTINGS_KEY
     };
-    await db.put(STORES.SETTINGS, updated);
+    await db.put('settings', updated);
     return updated;
+  }
+
+  /* ── Bulk Export / Import ── */
+  async exportAll() {
+    const db = await this.dbPromise;
+    return {
+      tasks: await db.getAll('tasks'),
+      tags: await db.getAll('tags'),
+      dependencies: await db.getAll('dependencies'),
+      time_logs: await db.getAll('time_logs'),
+      settings: await this.getSettings()
+    };
+  }
+
+  async importAll(data) {
+    const db = await this.dbPromise;
+    const tx = db.transaction(['tasks', 'tags', 'dependencies', 'time_logs', 'settings'], 'readwrite');
+
+    await tx.objectStore('tasks').clear();
+    await tx.objectStore('tags').clear();
+    await tx.objectStore('dependencies').clear();
+    await tx.objectStore('time_logs').clear();
+    await tx.objectStore('settings').clear();
+
+    if (Array.isArray(data.tasks)) {
+      for (const t of data.tasks) await tx.objectStore('tasks').put(t);
+    }
+    if (Array.isArray(data.tags)) {
+      for (const t of data.tags) await tx.objectStore('tags').put(t);
+    }
+    if (Array.isArray(data.dependencies)) {
+      for (const d of data.dependencies) await tx.objectStore('dependencies').put(d);
+    }
+    if (Array.isArray(data.time_logs)) {
+      for (const l of data.time_logs) await tx.objectStore('time_logs').put(l);
+    }
+    if (data.settings) {
+      await tx.objectStore('settings').put({ ...data.settings, key: SETTINGS_KEY });
+    } else {
+      await tx.objectStore('settings').put(DEFAULT_SETTINGS);
+    }
+
+    await tx.done;
   }
 }

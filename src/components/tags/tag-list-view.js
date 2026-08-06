@@ -1,215 +1,128 @@
 import { LitElement, html, css } from 'lit';
-import { appState } from '../../state/app-state.js';
+import { sharedStyles } from '../../styles/shared-styles.js';
+import { appState, AppStateController } from '../../state/app-state.js';
 import './tag-form.js';
-import '../shared/confirm-dialog.js';
+import '../shared/drawer-panel.js';
 
-export class TagListView extends LitElement {
+/**
+ * <crono-tag-list-view> — Tag management list view.
+ */
+export class CronoTagListView extends LitElement {
+  static styles = [
+    sharedStyles,
+    css`
+      :host {
+        display: flex;
+        flex-direction: column;
+        height: 100%;
+        gap: var(--space-md);
+      }
+      .header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+      }
+      .tag-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+        gap: var(--space-md);
+        overflow-y: auto;
+      }
+      .tag-card {
+        background: var(--bg-secondary);
+        border: 1px solid var(--border);
+        border-radius: var(--radius-md);
+        padding: var(--space-md);
+        display: flex;
+        flex-direction: column;
+        gap: var(--space-xs);
+        cursor: pointer;
+        transition: transform var(--transition-fast), border-color var(--transition-fast);
+      }
+      .tag-card:hover {
+        transform: translateY(-2px);
+        border-color: var(--border-hover);
+      }
+      .tag-header {
+        display: flex;
+        align-items: center;
+        gap: var(--space-sm);
+        font-weight: 600;
+      }
+      .color-dot {
+        width: 12px;
+        height: 12px;
+        border-radius: 50%;
+      }
+      .tag-meta {
+        font-size: 12px;
+        color: var(--text-secondary);
+      }
+    `
+  ];
+
   static properties = {
-    editingTag: { type: Object },
-    deletingTag: { type: Object },
-    isFormOpen: { type: Boolean }
+    drawerOpen: { type: Boolean },
+    editingTag: { type: Object }
   };
-
-  static styles = css`
-    :host {
-      display: block;
-    }
-
-    .header-row {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      margin-bottom: 24px;
-    }
-
-    .btn-create {
-      background: var(--color-accent, #6366F1);
-      color: #ffffff;
-      font-weight: 600;
-      padding: 8px 18px;
-      border-radius: var(--radius-md, 8px);
-      border: none;
-      cursor: pointer;
-      display: inline-flex;
-      align-items: center;
-      gap: 6px;
-    }
-
-    .tag-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-      gap: 16px;
-    }
-
-    .tag-card {
-      background: var(--color-bg-surface, #1A1C23);
-      border: 1px solid var(--color-border-subtle, #242735);
-      border-radius: var(--radius-lg, 12px);
-      padding: var(--space-4, 16px);
-      display: flex;
-      flex-direction: column;
-      gap: 12px;
-    }
-
-    .card-top {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-    }
-
-    .tag-title {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      font-weight: 700;
-      font-size: 1.125rem;
-    }
-
-    .color-dot {
-      width: 12px;
-      height: 12px;
-      border-radius: 50%;
-    }
-
-    .actions {
-      display: flex;
-      align-items: center;
-      gap: 4px;
-    }
-
-    .icon-btn {
-      background: transparent;
-      border: none;
-      color: var(--color-text-secondary, #9CA3AF);
-      cursor: pointer;
-      padding: 4px;
-      border-radius: 4px;
-    }
-
-    .meta {
-      font-size: 0.8125rem;
-      color: var(--color-text-secondary, #9CA3AF);
-      display: flex;
-      flex-direction: column;
-      gap: 4px;
-    }
-
-    .empty-state {
-      text-align: center;
-      padding: 48px 24px;
-      background: var(--color-bg-surface, #1A1C23);
-      border: 1px dashed var(--color-border, #2E3242);
-      border-radius: var(--radius-lg, 12px);
-      color: var(--color-text-secondary, #9CA3AF);
-      grid-column: 1 / -1;
-    }
-  `;
 
   constructor() {
     super();
+    this.appStateCtrl = new AppStateController(this);
+    this.drawerOpen = false;
     this.editingTag = null;
-    this.deletingTag = null;
-    this.isFormOpen = false;
   }
 
-  connectedCallback() {
-    super.connectedCallback();
-    this.unsubscribe = appState.subscribe(() => this.requestUpdate());
-  }
-
-  disconnectedCallback() {
-    super.disconnectedCallback();
-    if (this.unsubscribe) this.unsubscribe();
-  }
-
-  openCreateForm() {
+  _openCreate() {
     this.editingTag = null;
-    this.isFormOpen = true;
+    this.drawerOpen = true;
   }
 
-  editTag(tag) {
+  _openEdit(tag) {
     this.editingTag = tag;
-    this.isFormOpen = true;
-  }
-
-  deleteTag(tag) {
-    this.deletingTag = tag;
-  }
-
-  closeForm() {
-    this.isFormOpen = false;
-    this.editingTag = null;
-  }
-
-  async confirmDelete() {
-    if (this.deletingTag) {
-      await appState.deleteTag(this.deletingTag.id);
-      this.deletingTag = null;
-    }
+    this.drawerOpen = true;
   }
 
   render() {
     const tags = appState.tags || [];
 
     return html`
-      <div class="header-row">
-        <h2>🏷️ Tag Management</h2>
-        <button class="btn-create" @click="${this.openCreateForm}">+ Create Tag</button>
+      <div class="header">
+        <h2 style="margin: 0; font-size: 18px;">Tags (${tags.length})</h2>
+        <button class="crono-btn crono-btn-primary" @click=${this._openCreate}>
+          + New Tag
+        </button>
       </div>
 
       <div class="tag-grid">
-        ${tags.length === 0
-          ? html`
-              <div class="empty-state">
-                <h3>No tags defined</h3>
-                <p style="margin-top: 8px;">Create tags to categorize tasks and set time windows.</p>
+        ${tags.map(
+          (tg) => html`
+            <div class="tag-card" @click=${() => this._openEdit(tg)}>
+              <div class="tag-header">
+                <div class="color-dot" style="background-color: ${tg.color}"></div>
+                <span>${tg.name}</span>
               </div>
-            `
-          : tags.map(tag => {
-              const activeTasks = (appState.tasks || []).filter(
-                t => t.tag_ids?.includes(tag.id) && t.status === 'active'
-              );
-
-              return html`
-                <div class="tag-card">
-                  <div class="card-top">
-                    <div class="tag-title">
-                      <div class="color-dot" style="background-color: ${tag.color || '#3B82F6'};"></div>
-                      <span>${tag.name}</span>
-                    </div>
-                    <div class="actions">
-                      <button class="icon-btn" @click="${() => this.editTag(tag)}">✏️</button>
-                      <button class="icon-btn" @click="${() => this.deleteTag(tag)}">🗑️</button>
-                    </div>
-                  </div>
-
-                  <div class="meta">
-                    <span>⚙️ Window Mode: <strong>${tag.time_window_mode || 'none'}</strong></span>
-                    <span>📋 Active Tasks: <strong>${activeTasks.length}</strong></span>
-                    ${tag.needs_dedicated_timeslot
-                      ? html`<span>🔒 Dedicated Time Slots Reserved</span>`
-                      : ''}
-                  </div>
-                </div>
-              `;
-            })}
+              <div class="tag-meta">
+                <span>Mode: ${tg.time_window_mode || 'none'}</span>
+                ${tg.duration_hours ? html`<span> · Budget: ${tg.duration_hours}h</span>` : ''}
+              </div>
+            </div>
+          `
+        )}
       </div>
 
-      <tag-form
-        ?open="${this.isFormOpen}"
-        .tag="${this.editingTag}"
-        @drawer-close="${this.closeForm}"
-      ></tag-form>
-
-      <confirm-dialog
-        ?open="${!!this.deletingTag}"
-        title="Delete Tag"
-        message="Are you sure you want to delete '${this.deletingTag?.name}'?"
-        @cancel="${() => (this.deletingTag = null)}"
-        @confirm="${this.confirmDelete}"
-      ></confirm-dialog>
+      <crono-drawer-panel
+        .open=${this.drawerOpen}
+        .title=${this.editingTag ? 'Edit Tag' : 'New Tag'}
+        @crono-drawer:close=${() => (this.drawerOpen = false)}
+      >
+        <crono-tag-form
+          .tag=${this.editingTag}
+          @crono-form-saved=${() => (this.drawerOpen = false)}
+        ></crono-tag-form>
+      </crono-drawer-panel>
     `;
   }
 }
 
-customElements.define('tag-list-view', TagListView);
+customElements.define('crono-tag-list-view', CronoTagListView);

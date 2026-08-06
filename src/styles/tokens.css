@@ -1,82 +1,58 @@
 :root {
-  /* Color System - Base Palette */
-  --color-bg-base: #121318;
-  --color-bg-surface: #1A1C23;
-  --color-bg-surface-hover: #232631;
-  --color-bg-elevated: #262936;
-  --color-border: #2E3242;
-  --color-border-subtle: #242735;
+  /* ── Base Surfaces ── */
+  --bg-primary:     hsl(230, 15%, 8%);     /* App background */
+  --bg-secondary:   hsl(230, 15%, 12%);    /* Cards, panels */
+  --bg-tertiary:    hsl(230, 15%, 16%);    /* Elevated elements, hover states */
+  --bg-surface:     hsl(230, 15%, 20%);    /* Input fields, wells */
 
-  /* Accent & Brand Colors */
-  --accent-h: 239;
-  --accent-s: 84%;
-  --accent-l: 67%;
-  --color-accent: hsl(var(--accent-h), var(--accent-s), var(--accent-l));
-  --color-accent-hover: hsl(var(--accent-h), var(--accent-s), 60%);
-  --color-accent-active: hsl(var(--accent-h), var(--accent-s), 50%);
-  --color-accent-subtle: hsla(var(--accent-h), var(--accent-s), var(--accent-l), 0.15);
+  /* ── Accent Initial Base Defaults ── */
+  --accent-h:       239;
+  --accent-s:       84%;
+  --accent-l:       67%;
+  
+  --accent:         hsl(var(--accent-h), var(--accent-s), var(--accent-l));
+  --accent-hover:   hsl(var(--accent-h), var(--accent-s), calc(var(--accent-l) + 10%));
+  --accent-muted:   hsl(var(--accent-h), calc(var(--accent-s) * 0.5), 25%);
+  --accent-glow:    hsla(var(--accent-h), var(--accent-s), var(--accent-l), 0.25);
 
-  /* Alert Status Colors */
-  --color-orange-alert: #F59E0B;
-  --color-orange-alert-subtle: rgba(245, 158, 11, 0.15);
-  --color-red-alert: #EF4444;
-  --color-red-alert-subtle: rgba(239, 68, 68, 0.15);
-  --color-success: #10B981;
-  --color-success-subtle: rgba(16, 185, 129, 0.15);
+  /* ── Semantic Colors ── */
+  --alert-orange:   hsl(30, 100%, 60%);
+  --alert-orange-glow: hsla(30, 100%, 60%, 0.25);
+  --alert-red:      hsl(0, 85%, 60%);
+  --alert-red-glow: hsla(0, 85%, 60%, 0.35);
+  --success:        hsl(145, 70%, 50%);
+  --text-primary:   hsl(0, 0%, 92%);
+  --text-secondary: hsl(0, 0%, 65%);
+  --text-muted:     hsl(0, 0%, 45%);
+  --border:         hsl(230, 15%, 22%);
+  --border-hover:   hsl(230, 15%, 32%);
 
-  /* Typography Colors */
-  --color-text-primary: #F3F4F6;
-  --color-text-secondary: #9CA3AF;
-  --color-text-muted: #6B7280;
-  --color-text-on-accent: #FFFFFF;
+  /* ── Typography ── */
+  --font-family:    'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-mono:      'JetBrains Mono', 'Fira Code', monospace;
 
-  /* Typography Fonts */
-  --font-family-sans: 'Inter', system-ui, -apple-system, sans-serif;
-  --font-family-display: 'Outfit', system-ui, -apple-system, sans-serif;
+  /* ── Spacing Scale ── */
+  --space-xs:  4px;
+  --space-sm:  8px;
+  --space-md:  16px;
+  --space-lg:  24px;
+  --space-xl:  32px;
+  --space-2xl: 48px;
 
-  /* Font Sizes */
-  --font-size-xs: 0.75rem;     /* 12px */
-  --font-size-sm: 0.875rem;    /* 14px */
-  --font-size-md: 1rem;        /* 16px */
-  --font-size-lg: 1.125rem;    /* 18px */
-  --font-size-xl: 1.25rem;     /* 20px */
-  --font-size-2xl: 1.5rem;     /* 24px */
-  --font-size-3xl: 1.875rem;   /* 30px */
+  /* ── Radius ── */
+  --radius-sm:  6px;
+  --radius-md:  10px;
+  --radius-lg:  16px;
+  --radius-xl:  24px;
 
-  /* Spacing Scale */
-  --space-1: 0.25rem;  /* 4px */
-  --space-2: 0.5rem;   /* 8px */
-  --space-3: 0.75rem;  /* 12px */
-  --space-4: 1rem;     /* 16px */
-  --space-5: 1.25rem;  /* 20px */
-  --space-6: 1.5rem;   /* 24px */
-  --space-8: 2rem;     /* 32px */
-  --space-10: 2.5rem;  /* 40px */
-  --space-12: 3rem;    /* 48px */
+  /* ── Shadows (dark theme) ── */
+  --shadow-sm:  0 1px 3px rgba(0,0,0,0.4);
+  --shadow-md:  0 4px 12px rgba(0,0,0,0.5);
+  --shadow-lg:  0 8px 30px rgba(0,0,0,0.6);
+  --glow:       0 0 20px var(--accent-glow);
 
-  /* Border Radii */
-  --radius-sm: 0.375rem; /* 6px */
-  --radius-md: 0.5rem;   /* 8px */
-  --radius-lg: 0.75rem;  /* 12px */
-  --radius-xl: 1rem;     /* 16px */
-  --radius-full: 9999px;
-
-  /* Elevation & Shadows */
-  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.3);
-  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.4), 0 2px 4px -1px rgba(0, 0, 0, 0.2);
-  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.5), 0 4px 6px -2px rgba(0, 0, 0, 0.3);
-  --shadow-glow: 0 0 20px hsla(var(--accent-h), var(--accent-s), var(--accent-l), 0.3);
-
-  /* Transitions */
+  /* ── Transitions ── */
   --transition-fast: 150ms ease;
-  --transition-normal: 250ms ease;
-  --transition-slow: 350ms ease;
-
-  /* Z-Index Hierarchy */
-  --z-base: 1;
-  --z-dropdown: 100;
-  --z-sticky: 200;
-  --z-drawer: 300;
-  --z-modal: 400;
-  --z-toast: 500;
+  --transition-base: 250ms ease;
+  --transition-slow: 400ms cubic-bezier(0.4, 0, 0.2, 1);
 }

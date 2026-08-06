@@ -1,114 +1,99 @@
 import { LitElement, html, css } from 'lit';
+import { sharedStyles } from '../../styles/shared-styles.js';
 
-export class ConfirmDialog extends LitElement {
+/**
+ * <crono-confirm-dialog> — Modal confirmation dialog for destructive actions.
+ */
+export class CronoConfirmDialog extends LitElement {
+  static styles = [
+    sharedStyles,
+    css`
+      :host {
+        display: block;
+      }
+      .backdrop {
+        position: fixed;
+        inset: 0;
+        background: rgba(0, 0, 0, 0.6);
+        backdrop-filter: blur(4px);
+        z-index: 9000;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: var(--space-md);
+      }
+      .modal {
+        background: var(--bg-secondary);
+        border: 1px solid var(--border);
+        border-radius: var(--radius-lg);
+        padding: var(--space-lg);
+        width: 100%;
+        max-width: 400px;
+        box-shadow: var(--shadow-lg);
+        display: flex;
+        flex-direction: column;
+        gap: var(--space-md);
+      }
+      .title {
+        font-size: 16px;
+        font-weight: 600;
+        margin: 0;
+      }
+      .message {
+        font-size: 14px;
+        color: var(--text-secondary);
+        margin: 0;
+      }
+      .actions {
+        display: flex;
+        justify-content: flex-end;
+        gap: var(--space-sm);
+        margin-top: var(--space-sm);
+      }
+    `
+  ];
+
   static properties = {
     open: { type: Boolean },
     title: { type: String },
     message: { type: String },
-    confirmText: { type: String }
+    confirmText: { type: String, attribute: 'confirm-text' },
+    cancelText: { type: String, attribute: 'cancel-text' }
   };
-
-  static styles = css`
-    :host {
-      display: block;
-    }
-
-    .backdrop {
-      position: fixed;
-      inset: 0;
-      background: rgba(0, 0, 0, 0.7);
-      backdrop-filter: blur(4px);
-      z-index: var(--z-modal, 400);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      opacity: 0;
-      pointer-events: none;
-      transition: opacity 200ms ease;
-    }
-
-    .backdrop.open {
-      opacity: 1;
-      pointer-events: auto;
-    }
-
-    .dialog {
-      background: var(--color-bg-surface, #1A1C23);
-      border: 1px solid var(--color-border, #2E3242);
-      border-radius: var(--radius-xl, 16px);
-      padding: var(--space-6, 24px);
-      width: 90%;
-      max-width: 400px;
-      box-shadow: var(--shadow-lg);
-    }
-
-    .title {
-      font-family: var(--font-family-display, sans-serif);
-      font-size: 1.25rem;
-      font-weight: 700;
-      margin-bottom: 8px;
-    }
-
-    .message {
-      color: var(--color-text-secondary, #9CA3AF);
-      font-size: 0.875rem;
-      margin-bottom: 24px;
-      line-height: 1.5;
-    }
-
-    .actions {
-      display: flex;
-      justify-content: flex-end;
-      gap: 12px;
-    }
-
-    .btn-danger {
-      background: #EF4444;
-      color: #ffffff;
-      font-weight: 600;
-      padding: 8px 16px;
-      border-radius: 8px;
-      cursor: pointer;
-      border: none;
-    }
-
-    .btn-secondary {
-      background: var(--color-bg-surface-hover, #232631);
-      color: var(--color-text-primary, #F3F4F6);
-      padding: 8px 16px;
-      border-radius: 8px;
-      cursor: pointer;
-      border: 1px solid var(--color-border, #2E3242);
-    }
-  `;
 
   constructor() {
     super();
     this.open = false;
-    this.title = 'Are you sure?';
-    this.message = 'This action cannot be undone.';
-    this.confirmText = 'Delete';
+    this.title = 'Confirm Action';
+    this.message = 'Are you sure you want to proceed?';
+    this.confirmText = 'Confirm';
+    this.cancelText = 'Cancel';
   }
 
-  cancel() {
+  _onConfirm() {
+    this.dispatchEvent(new CustomEvent('crono-confirm', { bubbles: true, composed: true }));
     this.open = false;
-    this.dispatchEvent(new CustomEvent('cancel'));
   }
 
-  confirm() {
+  _onCancel() {
+    this.dispatchEvent(new CustomEvent('crono-cancel', { bubbles: true, composed: true }));
     this.open = false;
-    this.dispatchEvent(new CustomEvent('confirm'));
   }
 
   render() {
+    if (!this.open) return html``;
     return html`
-      <div class="backdrop ${this.open ? 'open' : ''}">
-        <div class="dialog">
-          <div class="title">${this.title}</div>
-          <div class="message">${this.message}</div>
+      <div class="backdrop" @click=${this._onCancel}>
+        <div class="modal" @click=${(e) => e.stopPropagation()}>
+          <h3 class="title">${this.title}</h3>
+          <p class="message">${this.message}</p>
           <div class="actions">
-            <button class="btn-secondary" @click="${this.cancel}">Cancel</button>
-            <button class="btn-danger" @click="${this.confirm}">${this.confirmText}</button>
+            <button class="crono-btn crono-btn-secondary" @click=${this._onCancel}>
+              ${this.cancelText}
+            </button>
+            <button class="crono-btn crono-btn-danger" @click=${this._onConfirm}>
+              ${this.confirmText}
+            </button>
           </div>
         </div>
       </div>
@@ -116,4 +101,4 @@ export class ConfirmDialog extends LitElement {
   }
 }
 
-customElements.define('confirm-dialog', ConfirmDialog);
+customElements.define('crono-confirm-dialog', CronoConfirmDialog);

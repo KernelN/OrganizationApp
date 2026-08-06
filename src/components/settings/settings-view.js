@@ -1,433 +1,405 @@
 import { LitElement, html, css } from 'lit';
-import { appState } from '../../state/app-state.js';
-import { DAYS_OF_WEEK } from '../../utils/date-utils.js';
-import { GitHubSync } from '../../data/github-sync.js';
+import { sharedStyles } from '../../styles/shared-styles.js';
+import { appState, AppStateController } from '../../state/app-state.js';
 import '../shared/color-picker.js';
 import '../shared/time-range-input.js';
+import '../shared/confirm-dialog.js';
 
-export class SettingsView extends LitElement {
+const DAYS = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
+
+/**
+ * <crono-settings-view> — Full settings control panel.
+ */
+export class CronoSettingsView extends LitElement {
+  static styles = [
+    sharedStyles,
+    css`
+      :host {
+        display: flex;
+        flex-direction: column;
+        height: 100%;
+        gap: var(--space-lg);
+        overflow-y: auto;
+      }
+      .section-card {
+        background: var(--bg-secondary);
+        border: 1px solid var(--border);
+        border-radius: var(--radius-lg);
+        padding: var(--space-lg);
+        display: flex;
+        flex-direction: column;
+        gap: var(--space-md);
+      }
+      .section-title {
+        font-size: 16px;
+        font-weight: 600;
+        margin: 0;
+        border-bottom: 1px solid var(--border);
+        padding-bottom: var(--space-sm);
+      }
+      .form-group {
+        display: flex;
+        flex-direction: column;
+        gap: var(--space-xs);
+      }
+      label {
+        font-size: 12px;
+        font-weight: 600;
+        color: var(--text-secondary);
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+      }
+      .row {
+        display: flex;
+        gap: var(--space-md);
+        align-items: center;
+      }
+      .row > * {
+        flex: 1;
+      }
+      .day-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: var(--space-xs) 0;
+        border-bottom: 1px dashed var(--border);
+      }
+      .day-name {
+        text-transform: capitalize;
+        font-weight: 500;
+        width: 100px;
+      }
+      .pomo-box {
+        background: var(--bg-surface);
+        padding: var(--space-md);
+        border-radius: var(--radius-md);
+        border: 1px solid var(--border);
+        display: flex;
+        flex-direction: column;
+        gap: var(--space-sm);
+      }
+      .checkbox-group {
+        display: flex;
+        gap: var(--space-sm);
+        flex-wrap: wrap;
+      }
+    `
+  ];
+
   static properties = {
-    settingsData: { type: Object },
-    showPat: { type: Boolean },
-    syncStatus: { type: String },
-    testResult: { type: Object }
+    settings: { type: Object },
+    testResult: { type: Object },
+    confirmPullOpen: { type: Boolean }
   };
-
-  static styles = css`
-    :host {
-      display: block;
-    }
-
-    .settings-container {
-      display: flex;
-      flex-direction: column;
-      gap: 24px;
-      max-width: 800px;
-    }
-
-    .section-card {
-      background: var(--color-bg-surface, #1A1C23);
-      border: 1px solid var(--color-border-subtle, #242735);
-      border-radius: var(--radius-lg, 12px);
-      padding: var(--space-6, 24px);
-      display: flex;
-      flex-direction: column;
-      gap: 16px;
-    }
-
-    .section-title {
-      font-family: var(--font-family-display, sans-serif);
-      font-size: 1.125rem;
-      font-weight: 700;
-      display: flex;
-      align-items: center;
-      gap: 8px;
-    }
-
-    .form-group {
-      display: flex;
-      flex-direction: column;
-      gap: 6px;
-    }
-
-    label {
-      font-size: 0.875rem;
-      font-weight: 600;
-      color: var(--color-text-secondary, #9CA3AF);
-    }
-
-    input[type="text"],
-    input[type="password"],
-    input[type="number"],
-    select {
-      background: var(--color-bg-base, #121318);
-      border: 1px solid var(--color-border, #2E3242);
-      border-radius: var(--radius-md, 8px);
-      padding: 10px 12px;
-      color: var(--color-text-primary, #F3F4F6);
-      font-size: 0.875rem;
-    }
-
-    .grid-2 {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 16px;
-    }
-
-    .checkbox-row {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      font-size: 0.875rem;
-      cursor: pointer;
-    }
-
-    .checkbox-row input {
-      width: 18px;
-      height: 18px;
-      accent-color: var(--color-accent, #6366F1);
-      cursor: pointer;
-    }
-
-    .window-editor {
-      display: flex;
-      flex-direction: column;
-      gap: 10px;
-    }
-
-    .day-row {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      padding: 8px 12px;
-      background: var(--color-bg-base, #121318);
-      border: 1px solid var(--color-border, #2E3242);
-      border-radius: var(--radius-md, 8px);
-      font-size: 0.875rem;
-    }
-
-    .day-name {
-      text-transform: capitalize;
-      font-weight: 600;
-      min-width: 100px;
-    }
-
-    .btn-save {
-      background: var(--color-accent, #6366F1);
-      color: #ffffff;
-      font-weight: 600;
-      padding: 10px 24px;
-      border-radius: var(--radius-md, 8px);
-      border: none;
-      cursor: pointer;
-      align-self: flex-start;
-      transition: background 150ms ease, box-shadow 150ms ease;
-    }
-
-    .btn-save:hover {
-      background: var(--color-accent-hover, #4F46E5);
-      box-shadow: var(--shadow-glow);
-    }
-
-    .btn-secondary {
-      background: var(--color-bg-surface-hover, #232631);
-      color: var(--color-text-primary, #F3F4F6);
-      padding: 8px 16px;
-      border-radius: 8px;
-      border: 1px solid var(--color-border, #2E3242);
-      cursor: pointer;
-    }
-
-    .pat-row {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-    }
-
-    .status-msg {
-      font-size: 0.8125rem;
-      padding: 6px 12px;
-      border-radius: 6px;
-      display: inline-block;
-    }
-
-    .status-success {
-      background: rgba(16, 185, 129, 0.15);
-      color: #10B981;
-      border: 1px solid rgba(16, 185, 129, 0.3);
-    }
-
-    .status-error {
-      background: rgba(239, 68, 68, 0.15);
-      color: #EF4444;
-      border: 1px solid rgba(239, 68, 68, 0.3);
-    }
-  `;
 
   constructor() {
     super();
-    this.settingsData = { ...appState.settings };
-    this.showPat = false;
-    this.syncStatus = '';
+    this.appStateCtrl = new AppStateController(this);
+    this.settings = { ...appState.settings };
     this.testResult = null;
+    this.confirmPullOpen = false;
+
+    // Pomodoro Generator state
+    this.pomoWorkMins = 50;
+    this.pomoBreakMins = 10;
+    this.pomoStart = '09:00';
+    this.pomoEnd = '17:00';
+    this.pomoDays = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday'];
   }
 
-  connectedCallback() {
-    super.connectedCallback();
-    this.unsubscribe = appState.subscribe(() => {
-      this.settingsData = { ...appState.settings };
-      this.requestUpdate();
-    });
-  }
-
-  disconnectedCallback() {
-    super.disconnectedCallback();
-    if (this.unsubscribe) this.unsubscribe();
-  }
-
-  async saveSettings() {
-    await appState.updateSettings(this.settingsData);
-    this.syncStatus = 'Settings saved successfully!';
-    setTimeout(() => (this.syncStatus = ''), 3000);
-  }
-
-  async testGitHubConnection() {
-    this.testResult = { testing: true };
-    const sync = new GitHubSync(this.settingsData.github_sync || {});
-    const result = await sync.testConnection();
-    this.testResult = result;
-  }
-
-  async triggerManualSync() {
-    this.syncStatus = 'Syncing data to GitHub...';
-    const sync = new GitHubSync(this.settingsData.github_sync || {});
-    const result = await sync.push();
-    if (result.success) {
-      this.syncStatus = `✓ Synced to GitHub at ${new Date(result.timestamp).toLocaleTimeString()}`;
-    } else {
-      this.syncStatus = `✕ Sync failed: ${result.error || result.reason}`;
+  willUpdate(changedProperties) {
+    if (changedProperties.has('settings') && !this.settings.accent_color) {
+      this.settings = { ...appState.settings };
     }
   }
 
-  updateWorkWindow(day, range) {
-    const current = this.settingsData.work_windows || {};
-    this.settingsData = {
-      ...this.settingsData,
-      work_windows: {
-        ...current,
-        [day]: [range]
-      }
-    };
+  async _save() {
+    await appState.updateSettings(this.settings);
   }
 
-  updateBreakWindow(day, range) {
-    const current = this.settingsData.break_windows || {};
-    this.settingsData = {
-      ...this.settingsData,
-      break_windows: {
-        ...current,
-        [day]: [range]
-      }
-    };
+  _updateWorkWindow(day, range) {
+    const current = { ...(this.settings.work_windows || {}) };
+    current[day] = [range];
+    this.settings = { ...this.settings, work_windows: current };
+    this._save();
+  }
+
+  _addBreakWindow(day) {
+    const current = { ...(this.settings.break_windows || {}) };
+    const dayBreaks = Array.isArray(current[day]) ? [...current[day]] : [];
+    dayBreaks.push({ start: '12:00', end: '13:00' });
+    current[day] = dayBreaks;
+    this.settings = { ...this.settings, break_windows: current };
+    this._save();
+  }
+
+  _removeBreakWindow(day, idx) {
+    const current = { ...(this.settings.break_windows || {}) };
+    const dayBreaks = Array.isArray(current[day]) ? [...current[day]] : [];
+    dayBreaks.splice(idx, 1);
+    current[day] = dayBreaks;
+    this.settings = { ...this.settings, break_windows: current };
+    this._save();
+  }
+
+  _generatePomodoroBreaks() {
+    const workMins = Number(this.pomoWorkMins);
+    const breakMins = Number(this.pomoBreakMins);
+    const [sH, sM] = this.pomoStart.split(':').map(Number);
+    const [eH, eM] = this.pomoEnd.split(':').map(Number);
+
+    let currTotalMins = sH * 60 + sM;
+    const endTotalMins = eH * 60 + eM;
+
+    const generatedBreaks = [];
+
+    while (currTotalMins + workMins + breakMins <= endTotalMins) {
+      const breakStartMins = currTotalMins + workMins;
+      const breakEndMins = breakStartMins + breakMins;
+
+      const bsHH = String(Math.floor(breakStartMins / 60)).padStart(2, '0');
+      const bsMM = String(breakStartMins % 60).padStart(2, '0');
+      const beHH = String(Math.floor(breakEndMins / 60)).padStart(2, '0');
+      const beMM = String(breakEndMins % 60).padStart(2, '0');
+
+      generatedBreaks.push({ start: `${bsHH}:${bsMM}`, end: `${beHH}:${beMM}` });
+      currTotalMins = breakEndMins;
+    }
+
+    const updatedBreakWindows = { ...(this.settings.break_windows || {}) };
+    for (const day of this.pomoDays) {
+      updatedBreakWindows[day] = generatedBreaks.map(b => ({ ...b }));
+    }
+
+    this.settings = { ...this.settings, break_windows: updatedBreakWindows };
+    this._save();
+  }
+
+  async _testGitHubConnection() {
+    this.testResult = await appState.sync.testConnection();
+  }
+
+  async _syncNow() {
+    try {
+      await appState.sync.push(appState.dal);
+    } catch (err) {
+      alert(err.message);
+    }
+  }
+
+  async _pullNow() {
+    try {
+      await appState.sync.pull(appState.dal);
+      window.location.reload();
+    } catch (err) {
+      alert(err.message);
+    }
   }
 
   render() {
-    const gh = this.settingsData.github_sync || {};
+    const syncConfig = this.settings.github_sync || {};
 
     return html`
-      <div class="settings-container">
-        <!-- Appearance & Theme -->
-        <div class="section-card">
-          <div class="section-title">🎨 Theme & Accent Color</div>
-          <div class="form-group">
-            <label>Primary Accent Color</label>
-            <color-picker
-              .value="${this.settingsData.accent_color || '#6366F1'}"
-              @color-change="${(e) => {
-                this.settingsData = { ...this.settingsData, accent_color: e.detail.value };
-                this.saveSettings();
-              }}"
-            ></color-picker>
-          </div>
+      <h2 style="margin: 0; font-size: 18px;">Settings</h2>
+
+      <!-- Schedule Settings -->
+      <div class="section-card">
+        <h3 class="section-title">📅 Schedule & Work Windows</h3>
+
+        <div class="form-group">
+          <label>Work Windows (Active Working Hours)</label>
+          ${DAYS.map(day => {
+            const dayWork = (this.settings.work_windows && this.settings.work_windows[day] && this.settings.work_windows[day][0]) || { start: '09:00', end: '17:00' };
+            return html`
+              <div class="day-row">
+                <span class="day-name">${day}</span>
+                <crono-time-range-input
+                  .start=${dayWork.start}
+                  .end=${dayWork.end}
+                  @crono-time-range-change=${e => this._updateWorkWindow(day, e.detail)}
+                ></crono-time-range-input>
+              </div>
+            `;
+          })}
         </div>
 
-        <!-- Working Hours & Work Windows -->
-        <div class="section-card">
-          <div class="section-title">🕒 Global Working Hours (Per Day)</div>
-          <div class="window-editor">
-            ${DAYS_OF_WEEK.map(day => {
-              const currentWin = this.settingsData.work_windows?.[day]?.[0] || { start: '09:00', end: '17:00' };
-              return html`
-                <div class="day-row">
+        <div class="form-group">
+          <label>Break Windows (Per-Day Breaks)</label>
+          ${DAYS.map(day => {
+            const dayBreaks = (this.settings.break_windows && this.settings.break_windows[day]) || [];
+            return html`
+              <div class="day-row" style="flex-direction: column; align-items: flex-start;">
+                <div style="display:flex; justify-content:space-between; width:100%;">
                   <span class="day-name">${day}</span>
-                  <time-range-input
-                    .start="${currentWin.start}"
-                    .end="${currentWin.end}"
-                    @range-change="${(e) => this.updateWorkWindow(day, e.detail)}"
-                  ></time-range-input>
+                  <button class="crono-btn crono-btn-secondary crono-btn-sm" @click=${() => this._addBreakWindow(day)}>+ Add Break</button>
                 </div>
-              `;
-            })}
-          </div>
+                ${dayBreaks.map((b, idx) => html`
+                  <div style="display:flex; gap:8px; align-items:center; margin-top:4px;">
+                    <crono-time-range-input
+                      .start=${b.start}
+                      .end=${b.end}
+                      @crono-time-range-change=${e => {
+                        const next = [...dayBreaks];
+                        next[idx] = e.detail;
+                        const bw = { ...(this.settings.break_windows || {}) };
+                        bw[day] = next;
+                        this.settings = { ...this.settings, break_windows: bw };
+                        this._save();
+                      }}
+                    ></crono-time-range-input>
+                    <button class="crono-btn crono-btn-icon" @click=${() => this._removeBreakWindow(day, idx)}>✕</button>
+                  </div>
+                `)}
+              </div>
+            `;
+          })}
         </div>
 
-        <!-- Break Windows -->
-        <div class="section-card">
-          <div class="section-title">☕ Break / Lunch Slots</div>
-          <div class="window-editor">
-            ${DAYS_OF_WEEK.map(day => {
-              const currentBreak = this.settingsData.break_windows?.[day]?.[0] || { start: '12:00', end: '13:00' };
-              return html`
-                <div class="day-row">
-                  <span class="day-name">${day}</span>
-                  <time-range-input
-                    .start="${currentBreak.start}"
-                    .end="${currentBreak.end}"
-                    @range-change="${(e) => this.updateBreakWindow(day, e.detail)}"
-                  ></time-range-input>
-                </div>
-              `;
-            })}
-          </div>
-        </div>
-
-        <!-- Scheduler Parameters -->
-        <div class="section-card">
-          <div class="section-title">⚙️ Scheduler Parameters</div>
-          <div class="grid-2">
+        <!-- Pomodoro Generator Utility -->
+        <div class="pomo-box">
+          <h4 style="margin:0; font-size:13px; font-weight:600;">🍅 Pomodoro Break Generator Utility</h4>
+          <div class="row">
             <div class="form-group">
-              <label>Time Slot Granularity</label>
-              <select
-                .value="${String(this.settingsData.slot_granularity_minutes || 15)}"
-                @change="${(e) => {
-                  this.settingsData = { ...this.settingsData, slot_granularity_minutes: Number(e.target.value) };
-                }}"
-              >
-                <option value="15">15 Minutes</option>
-                <option value="30">30 Minutes</option>
-                <option value="60">60 Minutes</option>
-              </select>
+              <label>Work Period (Mins)</label>
+              <input type="number" class="crono-input" .value=${String(this.pomoWorkMins)} @input=${e => this.pomoWorkMins = e.target.value} />
             </div>
-
             <div class="form-group">
-              <label>Fallback Scheduling Horizon (Days)</label>
-              <input
-                type="number"
-                min="1"
-                max="30"
-                .value="${this.settingsData.scheduling_horizon_days || 7}"
-                @change="${(e) => {
-                  this.settingsData = { ...this.settingsData, scheduling_horizon_days: Number(e.target.value) };
-                }}"
-              />
+              <label>Break Period (Mins)</label>
+              <input type="number" class="crono-input" .value=${String(this.pomoBreakMins)} @input=${e => this.pomoBreakMins = e.target.value} />
             </div>
           </div>
+          <div class="row">
+            <div class="form-group">
+              <label>Time Span</label>
+              <crono-time-range-input
+                .start=${this.pomoStart}
+                .end=${this.pomoEnd}
+                @crono-time-range-change=${e => { this.pomoStart = e.detail.start; this.pomoEnd = e.detail.end; }}
+              ></crono-time-range-input>
+            </div>
+          </div>
+          <button class="crono-btn crono-btn-secondary" @click=${this._generatePomodoroBreaks}>Generate Breaks</button>
         </div>
 
-        <!-- GitHub Octokit Backup Sync -->
-        <div class="section-card">
-          <div class="section-title">☁️ GitHub Backup Sync (Octokit REST)</div>
-
+        <div class="row">
           <div class="form-group">
-            <label class="checkbox-row">
-              <input
-                type="checkbox"
-                .checked="${gh.enabled ?? false}"
-                @change="${(e) => {
-                  this.settingsData = {
-                    ...this.settingsData,
-                    github_sync: { ...(gh || {}), enabled: e.target.checked }
-                  };
-                }}"
-              />
-              Enable Automatic GitHub Backup Sync
-            </label>
+            <label>Scheduler Interval (Minutes)</label>
+            <input
+              type="number"
+              class="crono-input"
+              .value=${String(this.settings.scheduler_interval_minutes || 5)}
+              @change=${e => { this.settings = { ...this.settings, scheduler_interval_minutes: Number(e.target.value) }; this._save(); }}
+            />
           </div>
-
-          <div class="grid-2">
-            <div class="form-group">
-              <label>Repository Owner (Username / Org)</label>
-              <input
-                type="text"
-                placeholder="e.g. mygithubuser"
-                .value="${gh.repo_owner || ''}"
-                @input="${(e) => {
-                  this.settingsData = {
-                    ...this.settingsData,
-                    github_sync: { ...(gh || {}), repo_owner: e.target.value }
-                  };
-                }}"
-              />
-            </div>
-
-            <div class="form-group">
-              <label>Repository Name</label>
-              <input
-                type="text"
-                placeholder="e.g. cronograma-data"
-                .value="${gh.repo_name || ''}"
-                @input="${(e) => {
-                  this.settingsData = {
-                    ...this.settingsData,
-                    github_sync: { ...(gh || {}), repo_name: e.target.value }
-                  };
-                }}"
-              />
-            </div>
-          </div>
-
           <div class="form-group">
-            <label>Personal Access Token (PAT)</label>
-            <div class="pat-row">
-              <input
-                type="${this.showPat ? 'text' : 'password'}"
-                style="flex: 1;"
-                placeholder="ghp_..."
-                .value="${gh.pat || ''}"
-                @input="${(e) => {
-                  this.settingsData = {
-                    ...this.settingsData,
-                    github_sync: { ...(gh || {}), pat: e.target.value }
-                  };
-                }}"
-              />
-              <button
-                class="btn-secondary"
-                type="button"
-                @click="${() => (this.showPat = !this.showPat)}"
-              >
-                ${this.showPat ? 'Hide' : 'Reveal'}
-              </button>
-            </div>
+            <label>Horizon Fallback (Days)</label>
+            <input
+              type="number"
+              class="crono-input"
+              .value=${String(this.settings.scheduling_horizon_days || 7)}
+              @change=${e => { this.settings = { ...this.settings, scheduling_horizon_days: Number(e.target.value) }; this._save(); }}
+            />
           </div>
-
-          <div style="display: flex; align-items: center; gap: 12px; margin-top: 8px;">
-            <button class="btn-secondary" type="button" @click="${this.testGitHubConnection}">
-              Test Connection
-            </button>
-            <button class="btn-secondary" type="button" @click="${this.triggerManualSync}">
-              Sync Now
-            </button>
-
-            ${this.testResult?.valid === true
-              ? html`<span class="status-msg status-success">✓ Connected: ${this.testResult.repoName}</span>`
-              : ''}
-            ${this.testResult?.valid === false
-              ? html`<span class="status-msg status-error">✕ Error: ${this.testResult.error}</span>`
-              : ''}
-          </div>
-
-          ${this.syncStatus
-            ? html`<div style="font-size: 0.875rem; color: var(--color-accent); font-weight: 500;">
-                ${this.syncStatus}
-              </div>`
-            : ''}
         </div>
-
-        <button class="btn-save" @click="${this.saveSettings}">Save Settings</button>
       </div>
+
+      <!-- Appearance Settings -->
+      <div class="section-card">
+        <h3 class="section-title">🎨 Appearance</h3>
+        <div class="form-group">
+          <label>Primary Accent Color</label>
+          <crono-color-picker
+            .value=${this.settings.accent_color || '#6366F1'}
+            @crono-color-change=${e => { this.settings = { ...this.settings, accent_color: e.detail.value }; this._save(); }}
+          ></crono-color-picker>
+        </div>
+      </div>
+
+      <!-- GitHub Sync Settings -->
+      <div class="section-card">
+        <h3 class="section-title">🔄 GitHub Backup Sync</h3>
+        <div class="row">
+          <div class="form-group">
+            <label>Enable Sync</label>
+            <input
+              type="checkbox"
+              .checked=${!!syncConfig.enabled}
+              @change=${e => {
+                const nextSync = { ...syncConfig, enabled: e.target.checked };
+                this.settings = { ...this.settings, github_sync: nextSync };
+                this._save();
+              }}
+            />
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label>Personal Access Token (PAT)</label>
+          <input
+            type="password"
+            class="crono-input"
+            .value=${syncConfig.pat || ''}
+            @input=${e => {
+              const nextSync = { ...syncConfig, pat: e.target.value };
+              this.settings = { ...this.settings, github_sync: nextSync };
+              this._save();
+            }}
+          />
+        </div>
+
+        <div class="row">
+          <div class="form-group">
+            <label>Repo Owner</label>
+            <input
+              type="text"
+              class="crono-input"
+              .value=${syncConfig.repo_owner || ''}
+              @input=${e => {
+                const nextSync = { ...syncConfig, repo_owner: e.target.value };
+                this.settings = { ...this.settings, github_sync: nextSync };
+                this._save();
+              }}
+            />
+          </div>
+
+          <div class="form-group">
+            <label>Repo Name</label>
+            <input
+              type="text"
+              class="crono-input"
+              .value=${syncConfig.repo_name || ''}
+              @input=${e => {
+                const nextSync = { ...syncConfig, repo_name: e.target.value };
+                this.settings = { ...this.settings, github_sync: nextSync };
+                this._save();
+              }}
+            />
+          </div>
+        </div>
+
+        <div class="row" style="margin-top: var(--space-sm);">
+          <button class="crono-btn crono-btn-secondary" @click=${this._testGitHubConnection}>Test Connection</button>
+          <button class="crono-btn crono-btn-primary" @click=${this._syncNow}>Sync Now (Push)</button>
+          <button class="crono-btn crono-btn-danger" @click=${() => this.confirmPullOpen = true}>Pull from GitHub</button>
+        </div>
+
+        ${this.testResult ? html`
+          <div style="color: ${this.testResult.valid ? 'var(--success)' : 'var(--alert-red)'}; font-size: 13px;">
+            ${this.testResult.valid ? '✅ Connection successful!' : `❌ ${this.testResult.error}`}
+          </div>
+        ` : ''}
+      </div>
+
+      <crono-confirm-dialog
+        .open=${this.confirmPullOpen}
+        title="Restore from GitHub"
+        message="This will overwrite all local data with data from your GitHub repository. Are you sure?"
+        confirm-text="Overwrite & Pull"
+        @crono-confirm=${this._pullNow}
+        @crono-cancel=${() => this.confirmPullOpen = false}
+      ></crono-confirm-dialog>
     `;
   }
 }
 
-customElements.define('settings-view', SettingsView);
+customElements.define('crono-settings-view', CronoSettingsView);

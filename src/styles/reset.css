@@ -1,35 +1,26 @@
-/* Modern CSS Reset */
 *, *::before, *::after {
   box-sizing: border-box;
-  margin: 0;
-  padding: 0;
 }
 
 html, body {
   height: 100%;
-  width: 100%;
-  overflow-x: hidden;
-  font-family: var(--font-family-sans, 'Inter', system-ui, -apple-system, sans-serif);
-  background-color: var(--color-bg-base, #121318);
-  color: var(--color-text-primary, #F3F4F6);
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
+}
+
+img, picture, video, canvas, svg {
+  display: block;
+  max-width: 100%;
 }
 
 input, button, textarea, select {
   font: inherit;
   color: inherit;
-  background: transparent;
-  border: none;
-  outline: none;
 }
 
 button {
   cursor: pointer;
-}
-
-ul, ol {
-  list-style: none;
+  background: none;
+  border: none;
+  padding: 0;
 }
 
 a {

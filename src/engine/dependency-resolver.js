@@ -1,91 +1,93 @@
 /**
- * Dependency graph builder and Kahn's topological sort for task scheduling.
+ * Pure functions for dependency graph construction, topological sorting, and cycle detection.
+ * Engine files MUST NOT import DOM, storage, or browser APIs.
  */
 
 /**
- * Build dependency graph maps for hard and soft dependencies.
- * @param {Array} dependencies Array of { id, task_id, depends_on_id, type }
- * @param {Array} activeTasks Array of active task objects
- * @returns {{ graph: Map<string, Array<{dependsOnId: string, type: string}>>, inDegrees: Map<string, number> }}
+ * Builds an adjacency map task_id -> [{ depends_on_id, type }]
+ * @param {Array} dependencies 
+ * @param {Array|Map} schedulableTasks 
+ * @returns {Map<string, Array<{ depends_on_id: string, type: 'hard'|'soft' }>>}
  */
-export function buildDependencyGraph(dependencies, activeTasks) {
-  const activeTaskIds = new Set(activeTasks.map(t => t.id));
-  const graph = new Map();
-  const inDegrees = new Map();
+export function buildDependencyGraph(dependencies = [], schedulableTasks = []) {
+  const taskSet = new Set(
+    Array.isArray(schedulableTasks)
+      ? schedulableTasks.map(t => t.id)
+      : Array.from(schedulableTasks.keys())
+  );
 
-  for (const taskId of activeTaskIds) {
+  const graph = new Map();
+  for (const taskId of taskSet) {
     graph.set(taskId, []);
-    inDegrees.set(taskId, 0);
   }
 
   for (const dep of dependencies) {
-    if (activeTaskIds.has(dep.task_id) && activeTaskIds.has(dep.depends_on_id)) {
-      graph.get(dep.task_id).push({
-        dependsOnId: dep.depends_on_id,
-        type: dep.type || 'hard'
-      });
-
-      // Count in-degree for hard dependencies
-      if (dep.type === 'hard') {
-        inDegrees.set(dep.task_id, (inDegrees.get(dep.task_id) || 0) + 1);
+    if (taskSet.has(dep.task_id) && taskSet.has(dep.depends_on_id)) {
+      if (!graph.has(dep.task_id)) {
+        graph.set(dep.task_id, []);
       }
+      graph.get(dep.task_id).push(dep);
     }
   }
-
-  return { graph, inDegrees };
+  return graph;
 }
 
 /**
- * Perform Kahn's topological sort based on hard dependencies.
- * @param {Array} activeTasks 
- * @param {Array} dependencies 
- * @returns {Array<string>} Array of task IDs in topological order
+ * Performs Kahn's algorithm topological sort on hard dependencies.
+ * @param {Map} graph - Adjacency map
+ * @param {Array} tasks - Array of active task objects
+ * @returns {Array<string>} Topologically ordered task IDs
  */
-export function topologicalSort(activeTasks, dependencies) {
-  const { graph, inDegrees } = buildDependencyGraph(dependencies, activeTasks);
-  const queue = [];
-  const result = [];
+export function topologicalSort(graph, tasks = []) {
+  const taskIds = tasks.map(t => t.id);
+  const inDegree = new Map();
 
-  for (const [taskId, inDegree] of inDegrees.entries()) {
-    if (inDegree === 0) {
-      queue.push(taskId);
-    }
+  for (const id of taskIds) {
+    inDegree.set(id, 0);
   }
 
-  // Reverse map: prerequisite task -> list of tasks that depend on it
-  const prereqToDependents = new Map();
+  // Calculate hard in-degrees: task A depends on Task B (B -> A edge)
   for (const [taskId, deps] of graph.entries()) {
     for (const dep of deps) {
-      if (dep.type === 'hard') {
-        if (!prereqToDependents.has(dep.dependsOnId)) {
-          prereqToDependents.set(dep.dependsOnId, []);
-        }
-        prereqToDependents.get(dep.dependsOnId).push(taskId);
+      if (dep.type === 'hard' && inDegree.has(taskId)) {
+        inDegree.set(taskId, (inDegree.get(taskId) || 0) + 1);
       }
     }
   }
 
+  const queue = [];
+  for (const [id, deg] of inDegree.entries()) {
+    if (deg === 0) {
+      queue.push(id);
+    }
+  }
+
+  const result = [];
   while (queue.length > 0) {
-    const currentTaskId = queue.shift();
-    result.push(currentTaskId);
+    const node = queue.shift();
+    result.push(node);
 
-    const dependents = prereqToDependents.get(currentTaskId) || [];
-    for (const dependentId of dependents) {
-      const currentInDegree = inDegrees.get(dependentId) - 1;
-      inDegrees.set(dependentId, currentInDegree);
-      if (currentInDegree === 0) {
-        queue.push(dependentId);
+    // Find nodes that depend on `node` (where depends_on_id == node)
+    for (const [taskId, deps] of graph.entries()) {
+      for (const dep of deps) {
+        if (dep.depends_on_id === node && dep.type === 'hard') {
+          const currentDeg = inDegree.get(taskId);
+          if (typeof currentDeg === 'number') {
+            const nextDeg = currentDeg - 1;
+            inDegree.set(taskId, nextDeg);
+            if (nextDeg === 0) {
+              queue.push(taskId);
+            }
+          }
+        }
       }
     }
   }
 
-  // If result length doesn't match active tasks, cycles exist (handled gracefully by appending remaining)
-  if (result.length < activeTasks.length) {
-    const included = new Set(result);
-    for (const task of activeTasks) {
-      if (!included.has(task.id)) {
-        result.push(task.id);
-      }
+  // Append any remaining tasks not reached (e.g. disconnected or soft-only nodes)
+  for (const id of taskIds) {
+    if (!result.includes(id)) {
+      result.push(id);
     }
   }
 
@@ -93,27 +95,66 @@ export function topologicalSort(activeTasks, dependencies) {
 }
 
 /**
- * Check if Task A has a hard dependency chain pointing to Task B.
- * @param {string} taskIdA 
- * @param {string} taskIdB 
- * @param {Array} dependencies 
+ * Checks if task A has a hard dependency chain pointing to task B.
+ * @param {Object} taskA 
+ * @param {Object} taskB 
+ * @param {Map} graph 
  * @returns {boolean}
  */
-export function hasHardDependencyChain(taskIdA, taskIdB, dependencies) {
+export function hasHardDependency(taskA, taskB, graph) {
+  if (!taskA || !taskB || !graph) return false;
+  // A depends on B directly or indirectly?
   const visited = new Set();
-  const queue = [taskIdA];
+  const queue = [taskA.id];
 
   while (queue.length > 0) {
     const current = queue.shift();
-    if (current === taskIdB) return true;
-    if (!visited.has(current)) {
-      visited.add(current);
-      for (const dep of dependencies) {
-        if (dep.task_id === current && dep.type === 'hard') {
-          queue.push(dep.depends_on_id);
-        }
+    if (current === taskB.id) return true;
+    visited.add(current);
+
+    const deps = graph.get(current) || [];
+    for (const dep of deps) {
+      if (dep.type === 'hard' && !visited.has(dep.depends_on_id)) {
+        queue.push(dep.depends_on_id);
       }
     }
   }
   return false;
+}
+
+/**
+ * Checks if adding newEdge creates a cycle in the dependency graph using DFS.
+ * @param {Array} existingDeps 
+ * @param {Object} newEdge - { task_id, depends_on_id }
+ * @returns {boolean} true if cycle detected
+ */
+export function detectCycleFromDependencies(existingDeps = [], newEdge) {
+  const adj = new Map();
+
+  const addEdge = (from, to) => {
+    if (!adj.has(from)) adj.set(from, []);
+    adj.get(from).push(to);
+  };
+
+  // Build graph (edges from task_id -> depends_on_id)
+  for (const d of existingDeps) {
+    addEdge(d.task_id, d.depends_on_id);
+  }
+  addEdge(newEdge.task_id, newEdge.depends_on_id);
+
+  // DFS from newEdge.depends_on_id to see if it reaches newEdge.task_id
+  const visited = new Set();
+  const dfs = (curr, target) => {
+    if (curr === target) return true;
+    visited.add(curr);
+    const neighbors = adj.get(curr) || [];
+    for (const next of neighbors) {
+      if (!visited.has(next)) {
+        if (dfs(next, target)) return true;
+      }
+    }
+    return false;
+  };
+
+  return dfs(newEdge.depends_on_id, newEdge.task_id);
 }

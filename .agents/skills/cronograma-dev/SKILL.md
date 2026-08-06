@@ -9,7 +9,7 @@ description: >
 
 # Cronograma Development Skill
 
-> **Always read this before writing code.** For full algorithm pseudo-code, data schemas, and UI wireframes, see [`IMPLEMENTATION_SPEC.md`](file:///d:/Github/Misc/OrganizationApp/IMPLEMENTATION_SPEC.md).
+> **Always read this before writing code.** For full algorithm pseudo-code, data schemas, and UI wireframes, see [`IMPLEMENTATION_SPEC.md`](file:///e:/Github/Funny%20Things/OrganizationApp/IMPLEMENTATION_SPEC.md).
 
 ---
 

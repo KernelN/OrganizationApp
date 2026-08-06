@@ -11,7 +11,7 @@ export default defineConfig({
   },
   server: {
     port: 3000,
-    open: true
+    open: false
   },
   plugins: [
     VitePWA({
@@ -20,7 +20,7 @@ export default defineConfig({
       manifest: {
         name: 'Cronograma',
         short_name: 'Cronograma',
-        description: 'Intelligent, offline-first task scheduling',
+        description: 'Intelligent task scheduling',
         theme_color: '#6366F1',
         background_color: '#121318',
         display: 'standalone',
@@ -37,6 +37,9 @@ export default defineConfig({
             type: 'image/png'
           }
         ]
+      },
+      workbox: {
+        globPatterns: ['**/*.{js,css,html,ico,png,svg}']
       }
     })
   ]

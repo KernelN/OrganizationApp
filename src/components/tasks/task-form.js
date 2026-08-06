@@ -1,433 +1,390 @@
 import { LitElement, html, css } from 'lit';
+import { sharedStyles } from '../../styles/shared-styles.js';
+import { validateTaskTagConstraints } from '../../utils/validators.js';
 import { appState } from '../../state/app-state.js';
-import '../shared/drawer-panel.js';
-import './task-dependency-graph.js';
+import '../shared/color-picker.js';
 
-export class TaskForm extends LitElement {
+/**
+ * <crono-task-form> — Create and edit form for tasks.
+ */
+export class CronoTaskForm extends LitElement {
+  static styles = [
+    sharedStyles,
+    css`
+      :host {
+        display: block;
+      }
+      form {
+        display: flex;
+        flex-direction: column;
+        gap: var(--space-md);
+      }
+      .form-group {
+        display: flex;
+        flex-direction: column;
+        gap: var(--space-xs);
+      }
+      label {
+        font-size: 12px;
+        font-weight: 600;
+        color: var(--text-secondary);
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+      }
+      .row {
+        display: flex;
+        gap: var(--space-md);
+      }
+      .row > * {
+        flex: 1;
+      }
+      .toggle-group {
+        display: flex;
+        align-items: center;
+        gap: var(--space-sm);
+        margin-top: var(--space-xs);
+      }
+      .chip-group {
+        display: flex;
+        gap: var(--space-xs);
+        flex-wrap: wrap;
+      }
+      .chip {
+        padding: 4px 10px;
+        border-radius: var(--radius-sm);
+        background: var(--bg-surface);
+        border: 1px solid var(--border);
+        font-size: 12px;
+        cursor: pointer;
+      }
+      .chip.selected {
+        background: var(--accent-muted);
+        border-color: var(--accent);
+        color: var(--text-primary);
+      }
+      .section-divider {
+        border-top: 1px solid var(--border);
+        margin-top: var(--space-sm);
+        padding-top: var(--space-md);
+        font-weight: 600;
+        font-size: 13px;
+      }
+      .logs-list {
+        display: flex;
+        flex-direction: column;
+        gap: var(--space-xs);
+        margin-top: var(--space-xs);
+      }
+      .log-item {
+        background: var(--bg-surface);
+        padding: var(--space-xs) var(--space-sm);
+        border-radius: var(--radius-sm);
+        font-size: 12px;
+        display: flex;
+        justify-content: space-between;
+      }
+    `
+  ];
+
   static properties = {
-    open: { type: Boolean },
-    task: { type: Object }
+    task: { type: Object },
+    tags: { type: Array },
+    allTasks: { type: Array }
   };
-
-  static styles = css`
-    :host {
-      display: block;
-    }
-
-    form {
-      display: flex;
-      flex-direction: column;
-      gap: 16px;
-    }
-
-    .form-group {
-      display: flex;
-      flex-direction: column;
-      gap: 6px;
-    }
-
-    label {
-      font-size: 0.875rem;
-      font-weight: 600;
-      color: var(--color-text-secondary, #9CA3AF);
-    }
-
-    input[type="text"],
-    input[type="number"],
-    input[type="datetime-local"],
-    textarea,
-    select {
-      background: var(--color-bg-base, #121318);
-      border: 1px solid var(--color-border, #2E3242);
-      border-radius: var(--radius-md, 8px);
-      padding: 10px 12px;
-      color: var(--color-text-primary, #F3F4F6);
-      font-size: 0.875rem;
-      font-family: inherit;
-    }
-
-    textarea {
-      min-height: 80px;
-      resize: vertical;
-    }
-
-    .checkbox-row {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      font-size: 0.875rem;
-      cursor: pointer;
-    }
-
-    .checkbox-row input {
-      width: 18px;
-      height: 18px;
-      accent-color: var(--color-accent, #6366F1);
-      cursor: pointer;
-    }
-
-    .grid-2 {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 12px;
-    }
-
-    .grid-3 {
-      display: grid;
-      grid-template-columns: 1fr 1fr 1fr;
-      gap: 10px;
-    }
-
-    .unit-input-group {
-      display: flex;
-      align-items: center;
-      gap: 4px;
-    }
-
-    .unit-input-group span {
-      font-size: 0.75rem;
-      color: var(--color-text-muted, #6B7280);
-    }
-
-    .tag-checkboxes {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 8px;
-    }
-
-    .tag-pill {
-      display: inline-flex;
-      align-items: center;
-      gap: 6px;
-      padding: 6px 14px;
-      border-radius: 9999px;
-      font-size: 0.8125rem;
-      font-weight: 600;
-      border: 2px solid transparent;
-      cursor: pointer;
-      opacity: 0.6;
-      transition: opacity 150ms ease, transform 150ms ease, border-color 150ms ease;
-    }
-
-    .tag-pill:hover {
-      opacity: 0.85;
-      transform: scale(1.03);
-    }
-
-    .tag-pill.selected {
-      opacity: 1;
-      border-color: #ffffff;
-      box-shadow: 0 0 10px rgba(255, 255, 255, 0.3);
-    }
-
-    .btn-submit {
-      background: var(--color-accent, #6366F1);
-      color: #ffffff;
-      font-weight: 600;
-      padding: 10px 20px;
-      border-radius: var(--radius-md, 8px);
-      border: none;
-      cursor: pointer;
-    }
-
-    .btn-cancel {
-      background: var(--color-bg-surface-hover, #232631);
-      color: var(--color-text-primary, #F3F4F6);
-      padding: 10px 20px;
-      border-radius: var(--radius-md, 8px);
-      border: 1px solid var(--color-border, #2E3242);
-      cursor: pointer;
-    }
-  `;
 
   constructor() {
     super();
-    this.open = false;
     this.task = null;
-    this.formData = this.getInitialData();
+    this.tags = [];
+    this.allTasks = [];
+
+    this._resetForm();
+  }
+
+  _resetForm() {
+    this.formData = {
+      title: '',
+      description: '',
+      color: '#6366F1',
+      priority: 0,
+      tag_ids: [],
+      duration_hours: 1,
+      deadline: '',
+      alert_window_hours: 24,
+      splittable: true,
+      ignore_breaks: false,
+      recurrence: null
+    };
+    this.selectedDepId = '';
+    this.selectedDepType = 'hard';
+    this.newLogHours = 1;
+    this.newLogNote = '';
   }
 
   willUpdate(changedProperties) {
-    if (changedProperties.has('open') && this.open) {
-      if (this.task) {
-        this.populateFromTask(this.task);
-      } else {
-        this.formData = this.getInitialData();
-      }
-    } else if (changedProperties.has('task') && this.open) {
-      if (this.task) {
-        this.populateFromTask(this.task);
-      }
+    if (changedProperties.has('task') && this.task) {
+      this.formData = {
+        title: this.task.title || '',
+        description: this.task.description || '',
+        color: this.task.color || '#6366F1',
+        priority: this.task.priority || 0,
+        tag_ids: Array.isArray(this.task.tag_ids) ? [...this.task.tag_ids] : [],
+        duration_hours: this.task.duration_hours || 1,
+        deadline: this.task.deadline ? this.task.deadline.substring(0, 16) : '',
+        alert_window_hours: this.task.alert_window_hours ?? 24,
+        splittable: this.task.splittable ?? true,
+        ignore_breaks: this.task.ignore_breaks ?? false,
+        recurrence: this.task.recurrence ? { ...this.task.recurrence } : null
+      };
     }
   }
 
-  populateFromTask(t) {
-    const totalMins = t.duration_hours != null ? Math.round(t.duration_hours * 60) : (t.duration_minutes || 30);
-    const durationHours = Math.floor(totalMins / 60);
-    const durationMinutes = totalMins % 60;
-
-    const alertMins = t.alert_window_hours != null
-      ? Math.round(t.alert_window_hours * 60)
-      : (t.alert_window_minutes || 120);
-
-    const alertDays = Math.floor(alertMins / (24 * 60));
-    const alertHrs = Math.floor((alertMins % (24 * 60)) / 60);
-    const alertMinRem = alertMins % 60;
-
-    this.formData = {
-      title: t.title || '',
-      description: t.description || '',
-      priority: t.priority ?? 5,
-      tag_ids: t.tag_ids ? [...t.tag_ids] : [],
-      deadline: t.deadline || '',
-      splittable: t.splittable ?? true,
-      ignore_breaks: t.ignore_breaks ?? false,
-      durationHours,
-      durationMinutes,
-      alertDays,
-      alertHours: alertHrs,
-      alertMinutes: alertMinRem
-    };
-  }
-
-  getInitialData() {
-    return {
-      title: '',
-      description: '',
-      priority: 5,
-      tag_ids: [],
-      deadline: '',
-      splittable: true,
-      ignore_breaks: false,
-      durationHours: 0,
-      durationMinutes: 30,
-      alertDays: 0,
-      alertHours: 2,
-      alertMinutes: 0
-    };
-  }
-
-  toggleTag(tagId) {
-    const current = this.formData.tag_ids || [];
-    if (current.includes(tagId)) {
-      this.formData.tag_ids = current.filter(id => id !== tagId);
+  _toggleTag(tagId) {
+    const ids = new Set(this.formData.tag_ids);
+    if (ids.has(tagId)) {
+      ids.delete(tagId);
     } else {
-      this.formData.tag_ids = [...current, tagId];
+      ids.add(tagId);
     }
+    const nextTagIds = Array.from(ids);
+    try {
+      validateTaskTagConstraints(nextTagIds, this.tags);
+      this.formData = { ...this.formData, tag_ids: nextTagIds };
+      this.requestUpdate();
+    } catch (err) {
+      alert(err.message);
+    }
+  }
+
+  _onSubmit(e) {
+    e.preventDefault();
+    const payload = {
+      ...this.formData,
+      priority: Number(this.formData.priority),
+      duration_hours: Number(this.formData.duration_hours),
+      alert_window_hours: this.formData.deadline ? Number(this.formData.alert_window_hours) : null,
+      deadline: this.formData.deadline ? new Date(this.formData.deadline).toISOString() : null
+    };
+
+    if (this.task && this.task.id) {
+      appState.updateTask(this.task.id, payload);
+    } else {
+      appState.createTask(payload);
+    }
+
+    this.dispatchEvent(new CustomEvent('crono-form-saved', { bubbles: true, composed: true }));
+  }
+
+  async _addDependency() {
+    if (!this.task || !this.task.id || !this.selectedDepId) return;
+    try {
+      await appState.createDependency({
+        task_id: this.task.id,
+        depends_on_id: this.selectedDepId,
+        type: this.selectedDepType
+      });
+      this.requestUpdate();
+    } catch (err) {
+      alert(err.message);
+    }
+  }
+
+  async _addTimeLog() {
+    if (!this.task || !this.task.id || !this.newLogHours) return;
+    await appState.createTimeLog({
+      task_id: this.task.id,
+      logged_hours: Number(this.newLogHours),
+      notes: this.newLogNote
+    });
+    this.newLogNote = '';
     this.requestUpdate();
   }
 
-  async handleSubmit(e) {
-    e.preventDefault();
-    if (!this.formData.title.trim()) return;
-
-    const totalDurationHours = Number(this.formData.durationHours || 0) + (Number(this.formData.durationMinutes || 0) / 60);
-    const totalAlertHours = (Number(this.formData.alertDays || 0) * 24) + Number(this.formData.alertHours || 0) + (Number(this.formData.alertMinutes || 0) / 60);
-
-    const payload = {
-      title: this.formData.title,
-      description: this.formData.description,
-      priority: Math.max(1, Number(this.formData.priority || 1)),
-      tag_ids: this.formData.tag_ids,
-      deadline: this.formData.deadline || null,
-      splittable: this.formData.splittable,
-      ignore_breaks: this.formData.ignore_breaks,
-      duration_hours: Number(totalDurationHours.toFixed(2)),
-      duration_minutes: Math.round(totalDurationHours * 60),
-      alert_window_hours: Number(totalAlertHours.toFixed(2)),
-      alert_window_minutes: Math.round(totalAlertHours * 60)
-    };
-
-    if (this.task?.id) {
-      await appState.updateTask(this.task.id, payload);
-    } else {
-      await appState.addTask(payload);
-    }
-
-    this.closeForm();
-  }
-
-  closeForm() {
-    this.open = false;
-    this.dispatchEvent(new CustomEvent('drawer-close', { bubbles: true, composed: true }));
-  }
-
   render() {
-    const isEdit = !!this.task?.id;
-    const availableTags = appState.tags || [];
+    const existingDeps = this.task ? appState.dependencies.filter(d => d.task_id === this.task.id) : [];
+    const taskLogs = this.task ? appState.timeLogs.filter(l => l.task_id === this.task.id) : [];
 
     return html`
-      <drawer-panel
-        ?open="${this.open}"
-        .title="${isEdit ? 'Edit Task' : 'Create New Task'}"
-        @drawer-close="${this.closeForm}"
-      >
-        <form @submit="${this.handleSubmit}">
-          <div class="form-group">
-            <label>Title *</label>
-            <input
-              type="text"
-              required
-              placeholder="Task title..."
-              .value="${this.formData.title || ''}"
-              @input="${(e) => (this.formData.title = e.target.value)}"
-            />
-          </div>
+      <form @submit=${this._onSubmit}>
+        <div class="form-group">
+          <label>Title *</label>
+          <input
+            type="text"
+            class="crono-input"
+            required
+            .value=${this.formData.title}
+            @input=${(e) => (this.formData.title = e.target.value)}
+            placeholder="e.g., Write Implementation Spec"
+          />
+        </div>
 
-          <div class="form-group">
-            <label>Description</label>
-            <textarea
-              placeholder="Task details..."
-              .value="${this.formData.description || ''}"
-              @input="${(e) => (this.formData.description = e.target.value)}"
-            ></textarea>
-          </div>
+        <div class="form-group">
+          <label>Description</label>
+          <textarea
+            class="crono-textarea"
+            .value=${this.formData.description}
+            @input=${(e) => (this.formData.description = e.target.value)}
+          ></textarea>
+        </div>
 
+        <div class="row">
           <div class="form-group">
-            <label>Duration</label>
-            <div class="grid-2">
-              <div class="unit-input-group">
-                <input
-                  type="number"
-                  min="0"
-                  placeholder="0"
-                  .value="${this.formData.durationHours ?? 0}"
-                  @change="${(e) => (this.formData.durationHours = Number(e.target.value))}"
-                />
-                <span>Hours</span>
-              </div>
-              <div class="unit-input-group">
-                <input
-                  type="number"
-                  min="0"
-                  max="59"
-                  step="5"
-                  placeholder="30"
-                  .value="${this.formData.durationMinutes ?? 30}"
-                  @change="${(e) => (this.formData.durationMinutes = Number(e.target.value))}"
-                />
-                <span>Mins</span>
-              </div>
-            </div>
-          </div>
-
-          <div class="form-group">
-            <label>Priority Score (Min: 1, Higher = First)</label>
+            <label>Priority (0-10)</label>
             <input
               type="number"
-              min="1"
-              .value="${this.formData.priority ?? 5}"
-              @change="${(e) => (this.formData.priority = Number(e.target.value))}"
+              class="crono-input"
+              min="0"
+              max="10"
+              .value=${String(this.formData.priority)}
+              @input=${(e) => (this.formData.priority = e.target.value)}
             />
           </div>
 
           <div class="form-group">
-            <label>Tags</label>
-            <div class="tag-checkboxes">
-              ${availableTags.map(tag => {
-                const isSelected = this.formData.tag_ids?.includes(tag.id);
-                return html`
-                  <div
-                    class="tag-pill ${isSelected ? 'selected' : ''}"
-                    style="background-color: ${tag.color || '#3B82F6'}; color: #ffffff;"
-                    @click="${() => this.toggleTag(tag.id)}"
-                  >
-                    🏷️ ${tag.name}
-                  </div>
-                `;
-              })}
-            </div>
+            <label>Duration (Hours)</label>
+            <input
+              type="number"
+              step="0.25"
+              min="0.25"
+              class="crono-input"
+              required
+              .value=${String(this.formData.duration_hours)}
+              @input=${(e) => (this.formData.duration_hours = e.target.value)}
+            />
           </div>
+        </div>
 
+        <div class="form-group">
+          <label>Color</label>
+          <crono-color-picker
+            .value=${this.formData.color}
+            @crono-color-change=${(e) => (this.formData.color = e.detail.value)}
+          ></crono-color-picker>
+        </div>
+
+        <div class="form-group">
+          <label>Tags (Max 1 time-windowed tag)</label>
+          <div class="chip-group">
+            ${this.tags.map(
+              (tg) => html`
+                <button
+                  type="button"
+                  class="chip ${this.formData.tag_ids.includes(tg.id) ? 'selected' : ''}"
+                  @click=${() => this._toggleTag(tg.id)}
+                >
+                  ${tg.name} ${tg.time_window_mode !== 'none' ? '⏰' : ''}
+                </button>
+              `
+            )}
+          </div>
+        </div>
+
+        <div class="row">
           <div class="form-group">
             <label>Deadline (Optional)</label>
             <input
               type="datetime-local"
-              .value="${this.formData.deadline ? this.formData.deadline.substring(0, 16) : ''}"
-              @change="${(e) => (this.formData.deadline = e.target.value ? new Date(e.target.value).toISOString() : '')}"
+              class="crono-input"
+              .value=${this.formData.deadline}
+              @input=${(e) => (this.formData.deadline = e.target.value)}
             />
           </div>
 
           <div class="form-group">
-            <label>Alert Window Before Deadline</label>
-            <div class="grid-3">
-              <div class="unit-input-group">
-                <input
-                  type="number"
-                  min="0"
-                  placeholder="0"
-                  .value="${this.formData.alertDays ?? 0}"
-                  @change="${(e) => (this.formData.alertDays = Number(e.target.value))}"
-                />
-                <span>Days</span>
-              </div>
-              <div class="unit-input-group">
-                <input
-                  type="number"
-                  min="0"
-                  max="23"
-                  placeholder="2"
-                  .value="${this.formData.alertHours ?? 2}"
-                  @change="${(e) => (this.formData.alertHours = Number(e.target.value))}"
-                />
-                <span>Hours</span>
-              </div>
-              <div class="unit-input-group">
-                <input
-                  type="number"
-                  min="0"
-                  max="59"
-                  step="5"
-                  placeholder="0"
-                  .value="${this.formData.alertMinutes ?? 0}"
-                  @change="${(e) => (this.formData.alertMinutes = Number(e.target.value))}"
-                />
-                <span>Mins</span>
-              </div>
-            </div>
+            <label>Alert Window (Hours before deadline)</label>
+            <input
+              type="number"
+              class="crono-input"
+              .value=${String(this.formData.alert_window_hours)}
+              @input=${(e) => (this.formData.alert_window_hours = e.target.value)}
+            />
           </div>
-
-          <div class="form-group">
-            <label class="checkbox-row">
-              <input
-                type="checkbox"
-                .checked="${this.formData.splittable ?? true}"
-                @change="${(e) => (this.formData.splittable = e.target.checked)}"
-              />
-              Allow Cronograma to split task across non-contiguous slots
-            </label>
-          </div>
-
-          <div class="form-group">
-            <label class="checkbox-row">
-              <input
-                type="checkbox"
-                .checked="${this.formData.ignore_breaks ?? false}"
-                @change="${(e) => (this.formData.ignore_breaks = e.target.checked)}"
-              />
-              Can be scheduled during break hours
-            </label>
-          </div>
-
-          ${isEdit
-            ? html`
-                <div class="form-group">
-                  <label>Dependencies</label>
-                  <task-dependency-graph .taskId="${this.task.id}"></task-dependency-graph>
-                </div>
-              `
-            : ''}
-        </form>
-
-        <div slot="footer">
-          <button class="btn-cancel" @click="${this.closeForm}">Cancel</button>
-          <button class="btn-submit" @click="${this.handleSubmit}">
-            ${isEdit ? 'Save Changes' : 'Create Task'}
-          </button>
         </div>
-      </drawer-panel>
+
+        <div class="row">
+          <div class="toggle-group">
+            <input
+              type="checkbox"
+              id="splittable"
+              .checked=${this.formData.splittable}
+              @change=${(e) => (this.formData.splittable = e.target.checked)}
+            />
+            <label for="splittable">Allow Task Splitting</label>
+          </div>
+
+          <div class="toggle-group">
+            <input
+              type="checkbox"
+              id="ignore_breaks"
+              .checked=${this.formData.ignore_breaks}
+              @change=${(e) => (this.formData.ignore_breaks = e.target.checked)}
+            />
+            <label for="ignore_breaks">Ignore Breaks</label>
+          </div>
+        </div>
+
+        ${this.task && this.task.id ? html`
+          <div class="section-divider">Dependencies</div>
+          <div class="row">
+            <select class="crono-select" @change=${e => this.selectedDepId = e.target.value}>
+              <option value="">-- Select Prerequisite Task --</option>
+              ${this.allTasks.filter(t => t.id !== this.task.id).map(t => html`
+                <option value=${t.id}>${t.title}</option>
+              `)}
+            </select>
+            <select class="crono-select" @change=${e => this.selectedDepType = e.target.value}>
+              <option value="hard">Hard (Strict order)</option>
+              <option value="soft">Soft (Preferred order)</option>
+            </select>
+            <button type="button" class="crono-btn crono-btn-secondary" @click=${this._addDependency}>Add</button>
+          </div>
+          <div class="logs-list">
+            ${existingDeps.map(d => {
+              const depTask = this.allTasks.find(t => t.id === d.depends_on_id);
+              return html`
+                <div class="log-item">
+                  <span>Depends on: ${depTask ? depTask.title : d.depends_on_id} (${d.type})</span>
+                  <button type="button" class="crono-btn crono-btn-icon" @click=${() => appState.deleteDependency(d.id)}>✕</button>
+                </div>
+              `;
+            })}
+          </div>
+
+          <div class="section-divider">Time Tracking Log</div>
+          <div class="row">
+            <input
+              type="number"
+              step="0.25"
+              class="crono-input"
+              placeholder="Hours"
+              .value=${String(this.newLogHours)}
+              @input=${e => this.newLogHours = e.target.value}
+            />
+            <input
+              type="text"
+              class="crono-input"
+              placeholder="Notes..."
+              .value=${this.newLogNote}
+              @input=${e => this.newLogNote = e.target.value}
+            />
+            <button type="button" class="crono-btn crono-btn-secondary" @click=${this._addTimeLog}>Log</button>
+          </div>
+          <div class="logs-list">
+            ${taskLogs.map(l => html`
+              <div class="log-item">
+                <span>⏱ ${l.logged_hours}h - ${l.notes || 'No notes'}</span>
+                <span>${l.logged_at.split('T')[0]}</span>
+              </div>
+            `)}
+          </div>
+        ` : ''}
+
+        <button type="submit" class="crono-btn crono-btn-primary" style="margin-top: var(--space-md);">
+          Save Task
+        </button>
+      </form>
     `;
   }
 }
 
-customElements.define('task-form', TaskForm);
+customElements.define('crono-task-form', CronoTaskForm);

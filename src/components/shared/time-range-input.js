@@ -1,37 +1,35 @@
 import { LitElement, html, css } from 'lit';
+import { sharedStyles } from '../../styles/shared-styles.js';
 
-export class TimeRangeInput extends LitElement {
+/**
+ * <crono-time-range-input> — Component for selecting start and end HH:MM time range.
+ */
+export class CronoTimeRangeInput extends LitElement {
+  static styles = [
+    sharedStyles,
+    css`
+      :host {
+        display: block;
+      }
+      .range-row {
+        display: flex;
+        align-items: center;
+        gap: var(--space-sm);
+      }
+      .time-input {
+        width: 110px;
+      }
+      .separator {
+        color: var(--text-muted);
+        font-weight: 500;
+      }
+    `
+  ];
+
   static properties = {
     start: { type: String },
     end: { type: String }
   };
-
-  static styles = css`
-    :host {
-      display: inline-block;
-    }
-
-    .range-container {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-    }
-
-    input[type="time"] {
-      background: var(--color-bg-base, #121318);
-      border: 1px solid var(--color-border, #2E3242);
-      border-radius: var(--radius-md, 8px);
-      padding: 6px 10px;
-      color: var(--color-text-primary, #F3F4F6);
-      font-size: 0.875rem;
-      color-scheme: dark;
-    }
-
-    .separator {
-      color: var(--color-text-muted, #6B7280);
-      font-size: 0.875rem;
-    }
-  `;
 
   constructor() {
     super();
@@ -39,41 +37,43 @@ export class TimeRangeInput extends LitElement {
     this.end = '17:00';
   }
 
-  handleStartChange(e) {
+  _onChange() {
+    this.dispatchEvent(new CustomEvent('crono-time-range-change', {
+      detail: { start: this.start, end: this.end },
+      bubbles: true,
+      composed: true
+    }));
+  }
+
+  _onStartInput(e) {
     this.start = e.target.value;
-    this.emitChange();
+    this._onChange();
   }
 
-  handleEndChange(e) {
+  _onEndInput(e) {
     this.end = e.target.value;
-    this.emitChange();
-  }
-
-  emitChange() {
-    this.dispatchEvent(
-      new CustomEvent('range-change', {
-        detail: { start: this.start, end: this.end }
-      })
-    );
+    this._onChange();
   }
 
   render() {
     return html`
-      <div class="range-container">
+      <div class="range-row">
         <input
           type="time"
-          .value="${this.start || '09:00'}"
-          @change="${this.handleStartChange}"
+          class="crono-input time-input"
+          .value=${this.start}
+          @change=${this._onStartInput}
         />
         <span class="separator">to</span>
         <input
           type="time"
-          .value="${this.end || '17:00'}"
-          @change="${this.handleEndChange}"
+          class="crono-input time-input"
+          .value=${this.end}
+          @change=${this._onEndInput}
         />
       </div>
     `;
   }
 }
 
-customElements.define('time-range-input', TimeRangeInput);
+customElements.define('crono-time-range-input', CronoTimeRangeInput);

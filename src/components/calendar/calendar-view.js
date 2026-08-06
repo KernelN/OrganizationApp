@@ -1,178 +1,175 @@
 import { LitElement, html, css } from 'lit';
-import { appState } from '../../state/app-state.js';
-import { scheduleState } from '../../state/schedule-state.js';
+import { sharedStyles } from '../../styles/shared-styles.js';
+import { formatDateISO, parseISOToLocalDate } from '../../utils/date-utils.js';
+import { appState, AppStateController } from '../../state/app-state.js';
 import './calendar-day-view.js';
 import './calendar-week-view.js';
 import './calendar-month-view.js';
 
-export class CalendarView extends LitElement {
+/**
+ * <crono-calendar-view> — Parent calendar container supporting Day/Week/Month views.
+ */
+export class CronoCalendarView extends LitElement {
+  static styles = [
+    sharedStyles,
+    css`
+      :host {
+        display: flex;
+        flex-direction: column;
+        height: 100%;
+        gap: var(--space-md);
+      }
+      .toolbar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: var(--space-md);
+        background: var(--bg-surface);
+        padding: var(--space-sm) var(--space-md);
+        border-radius: var(--radius-md);
+        border: 1px solid var(--border);
+        flex-wrap: wrap;
+      }
+      .date-nav {
+        display: flex;
+        align-items: center;
+        gap: var(--space-sm);
+      }
+      .current-date-title {
+        font-weight: 600;
+        font-size: 15px;
+        min-width: 180px;
+      }
+      .mode-toggle {
+        display: flex;
+        background: var(--bg-secondary);
+        padding: 2px;
+        border-radius: var(--radius-sm);
+        border: 1px solid var(--border);
+      }
+      .mode-btn {
+        background: transparent;
+        border: none;
+        padding: var(--space-xs) var(--space-sm);
+        border-radius: var(--radius-sm);
+        font-size: 12px;
+        cursor: pointer;
+        font-weight: 500;
+        color: var(--text-secondary);
+      }
+      .mode-btn.active {
+        background: var(--bg-tertiary);
+        color: var(--text-primary);
+      }
+      .view-container {
+        flex: 1;
+        overflow: hidden;
+      }
+    `
+  ];
+
   static properties = {
-    viewMode: { type: String }, // 'day' | 'week' | 'month'
-    selectedDate: { type: Object }
+    mode: { type: String }, // 'day' | 'week' | 'month'
+    selectedDate: { type: String }
   };
-
-  static styles = css`
-    :host {
-      display: block;
-    }
-
-    .calendar-toolbar {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      flex-wrap: wrap;
-      gap: 16px;
-      margin-bottom: 20px;
-    }
-
-    .nav-controls {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-    }
-
-    .date-heading {
-      font-family: var(--font-family-display, sans-serif);
-      font-size: 1.25rem;
-      font-weight: 700;
-      min-width: 220px;
-      text-align: center;
-    }
-
-    .btn-nav {
-      background: var(--color-bg-surface, #1A1C23);
-      border: 1px solid var(--color-border, #2E3242);
-      color: var(--color-text-primary, #F3F4F6);
-      padding: 6px 12px;
-      border-radius: var(--radius-md, 8px);
-      cursor: pointer;
-      font-weight: 500;
-      transition: background 150ms ease;
-    }
-
-    .btn-nav:hover {
-      background: var(--color-bg-elevated, #262936);
-    }
-
-    .mode-tabs {
-      display: flex;
-      background: var(--color-bg-surface, #1A1C23);
-      padding: 4px;
-      border-radius: var(--radius-md, 8px);
-      border: 1px solid var(--color-border, #2E3242);
-    }
-
-    .tab {
-      padding: 6px 14px;
-      border-radius: var(--radius-sm, 6px);
-      font-size: 0.875rem;
-      font-weight: 500;
-      color: var(--color-text-secondary, #9CA3AF);
-      cursor: pointer;
-      border: none;
-      background: transparent;
-      transition: background 150ms ease, color 150ms ease;
-    }
-
-    .tab.active {
-      background: var(--color-bg-elevated, #262936);
-      color: var(--color-text-primary, #F3F4F6);
-      font-weight: 600;
-    }
-  `;
 
   constructor() {
     super();
-    this.viewMode = 'day';
-    this.selectedDate = new Date();
+    this.appStateCtrl = new AppStateController(this);
+    this.mode = 'day';
+    this.selectedDate = formatDateISO(new Date());
   }
 
-  connectedCallback() {
-    super.connectedCallback();
-    this.unsubscribeSchedule = scheduleState.subscribe(() => this.requestUpdate());
-    this.unsubscribeApp = appState.subscribe(() => this.requestUpdate());
+  _navigate(offset) {
+    const d = parseISOToLocalDate(this.selectedDate);
+    if (this.mode === 'day') d.setDate(d.getDate() + offset);
+    else if (this.mode === 'week') d.setDate(d.getDate() + offset * 7);
+    else if (this.mode === 'month') d.setMonth(d.getMonth() + offset);
+    this.selectedDate = formatDateISO(d);
   }
 
-  disconnectedCallback() {
-    super.disconnectedCallback();
-    if (this.unsubscribeSchedule) this.unsubscribeSchedule();
-    if (this.unsubscribeApp) this.unsubscribeApp();
-  }
-
-  navigate(direction) {
-    const d = new Date(this.selectedDate);
-    if (this.viewMode === 'day') {
-      d.setDate(d.getDate() + direction);
-    } else if (this.viewMode === 'week') {
-      d.setDate(d.getDate() + direction * 7);
-    } else if (this.viewMode === 'month') {
-      d.setMonth(d.getMonth() + direction);
-    }
-    this.selectedDate = d;
-  }
-
-  goToday() {
-    this.selectedDate = new Date();
-  }
-
-  getFormattedHeading() {
-    if (this.viewMode === 'day') {
-      return this.selectedDate.toLocaleDateString([], {
-        weekday: 'short',
-        month: 'short',
-        day: 'numeric',
-        year: 'numeric'
-      });
-    }
-    if (this.viewMode === 'month') {
-      return this.selectedDate.toLocaleDateString([], { month: 'long', year: 'numeric' });
-    }
-    return `Week of ${this.selectedDate.toLocaleDateString([], { month: 'short', day: 'numeric' })}`;
+  _goToday() {
+    this.selectedDate = formatDateISO(new Date());
   }
 
   render() {
+    const blocks = appState.schedule ? appState.schedule.blocks || [] : [];
+    const tagWindowsComputed = appState.schedule ? appState.schedule.tag_windows_computed || [] : [];
+    const tasks = appState.tasks || [];
+    const tags = appState.tags || [];
+    const settings = appState.settings || {};
+
+    const formattedHeader = parseISOToLocalDate(this.selectedDate).toLocaleDateString('en-US', {
+      weekday: 'short',
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric'
+    });
+
     return html`
-      <div class="calendar-toolbar">
-        <div class="nav-controls">
-          <button class="btn-nav" @click="${() => this.navigate(-1)}">‹ Prev</button>
-          <button class="btn-nav" @click="${this.goToday}">Today</button>
-          <button class="btn-nav" @click="${() => this.navigate(1)}">Next ›</button>
-          <div class="date-heading">${this.getFormattedHeading()}</div>
+      <div class="toolbar">
+        <div class="date-nav">
+          <button class="crono-btn crono-btn-secondary crono-btn-sm" @click=${() => this._navigate(-1)}>◀</button>
+          <button class="crono-btn crono-btn-secondary crono-btn-sm" @click=${this._goToday}>Today</button>
+          <button class="crono-btn crono-btn-secondary crono-btn-sm" @click=${() => this._navigate(1)}>▶</button>
+          <span class="current-date-title">${formattedHeader}</span>
         </div>
 
-        <div class="mode-tabs">
+        <div class="mode-toggle">
           <button
-            class="tab ${this.viewMode === 'day' ? 'active' : ''}"
-            @click="${() => (this.viewMode = 'day')}"
-          >
-            Day
-          </button>
+            class="mode-btn ${this.mode === 'day' ? 'active' : ''}"
+            @click=${() => (this.mode = 'day')}
+          >Day</button>
           <button
-            class="tab ${this.viewMode === 'week' ? 'active' : ''}"
-            @click="${() => (this.viewMode = 'week')}"
-          >
-            Week
-          </button>
+            class="mode-btn ${this.mode === 'week' ? 'active' : ''}"
+            @click=${() => (this.mode = 'week')}
+          >Week</button>
           <button
-            class="tab ${this.viewMode === 'month' ? 'active' : ''}"
-            @click="${() => (this.viewMode = 'month')}"
-          >
-            Month
-          </button>
+            class="mode-btn ${this.mode === 'month' ? 'active' : ''}"
+            @click=${() => (this.mode = 'month')}
+          >Month</button>
         </div>
       </div>
 
-      ${this.viewMode === 'day'
-        ? html`<calendar-day-view .selectedDate="${this.selectedDate}"></calendar-day-view>`
-        : ''}
-      ${this.viewMode === 'week'
-        ? html`<calendar-week-view .selectedDate="${this.selectedDate}"></calendar-week-view>`
-        : ''}
-      ${this.viewMode === 'month'
-        ? html`<calendar-month-view .selectedDate="${this.selectedDate}"></calendar-month-view>`
-        : ''}
+      <div class="view-container">
+        ${this.mode === 'day'
+          ? html`
+              <crono-calendar-day-view
+                .selectedDate=${this.selectedDate}
+                .blocks=${blocks}
+                .tasks=${tasks}
+                .tags=${tags}
+                .tagWindowsComputed=${tagWindowsComputed}
+                .settings=${settings}
+              ></crono-calendar-day-view>
+            `
+          : this.mode === 'week'
+          ? html`
+              <crono-calendar-week-view
+                .selectedDate=${this.selectedDate}
+                .blocks=${blocks}
+                .tasks=${tasks}
+                .tags=${tags}
+                .tagWindowsComputed=${tagWindowsComputed}
+                .settings=${settings}
+              ></crono-calendar-week-view>
+            `
+          : html`
+              <crono-calendar-month-view
+                .selectedDate=${this.selectedDate}
+                .blocks=${blocks}
+                .tasks=${tasks}
+                .tags=${tags}
+                .tagWindowsComputed=${tagWindowsComputed}
+                @crono-date-select=${(e) => {
+                  this.selectedDate = e.detail.date;
+                  this.mode = 'day';
+                }}
+              ></crono-calendar-month-view>
+            `}
+      </div>
     `;
   }
 }
 
-customElements.define('calendar-view', CalendarView);
+customElements.define('crono-calendar-view', CronoCalendarView);

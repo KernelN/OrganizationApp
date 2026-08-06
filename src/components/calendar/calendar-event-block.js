@@ -1,138 +1,128 @@
 import { LitElement, html, css } from 'lit';
-import { appState } from '../../state/app-state.js';
-import '../shared/alert-badge.js';
+import { sharedStyles } from '../../styles/shared-styles.js';
+import { hexToRgba } from '../../utils/color-utils.js';
+import { formatHHMM } from '../../utils/date-utils.js';
 
-export class CalendarEventBlock extends LitElement {
+/**
+ * <crono-calendar-event-block> — Render element for scheduled task/tag block.
+ */
+export class CronoCalendarEventBlock extends LitElement {
+  static styles = [
+    sharedStyles,
+    css`
+      :host {
+        display: block;
+        height: 100%;
+        width: 100%;
+        overflow: hidden;
+      }
+      .block {
+        height: 100%;
+        width: 100%;
+        border-radius: var(--radius-sm);
+        padding: 4px 8px;
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+        font-size: 12px;
+        cursor: pointer;
+        transition: transform var(--transition-fast), box-shadow var(--transition-fast);
+        box-sizing: border-box;
+      }
+      .block:hover {
+        transform: scale(1.01);
+        box-shadow: var(--shadow-md);
+      }
+      .header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 4px;
+        font-weight: 600;
+        line-height: 1.2;
+      }
+      .title {
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .icons {
+        display: flex;
+        align-items: center;
+        gap: 2px;
+        font-size: 12px;
+      }
+      .time {
+        font-family: var(--font-mono);
+        font-size: 11px;
+        opacity: 0.85;
+      }
+
+      /* Alert Border & Pulsing */
+      .alert-orange-border {
+        border-left: 4px solid var(--alert-orange) !important;
+      }
+      .alert-red-border {
+        border-left: 4px solid var(--alert-red) !important;
+        animation: pulse-red-alert 2s infinite;
+      }
+    `
+  ];
+
   static properties = {
     block: { type: Object },
     task: { type: Object }
   };
 
-  static styles = css`
-    :host {
-      display: block;
-      height: 100%;
-      width: 100%;
-    }
-
-    .event-block {
-      height: 100%;
-      width: 100%;
-      border-radius: var(--radius-md, 8px);
-      padding: 6px 10px;
-      color: #ffffff;
-      display: flex;
-      flex-direction: column;
-      justify-content: space-between;
-      box-shadow: var(--shadow-sm);
-      box-sizing: border-border;
-      overflow: hidden;
-      cursor: pointer;
-      position: relative;
-      border: 1px solid rgba(255, 255, 255, 0.2);
-      transition: transform 150ms ease, box-shadow 150ms ease;
-    }
-
-    .event-block:hover {
-      transform: translateY(-1px);
-      box-shadow: var(--shadow-md);
-      border-color: rgba(255, 255, 255, 0.5);
-    }
-
-    .event-header {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 6px;
-    }
-
-    .title-text {
-      font-weight: 700;
-      font-size: 0.8125rem;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-    }
-
-    .time-text {
-      font-size: 0.75rem;
-      opacity: 0.9;
-    }
-
-    .badge-group {
-      display: flex;
-      align-items: center;
-      gap: 4px;
-    }
-
-    .lock-btn {
-      background: rgba(0, 0, 0, 0.3);
-      border: none;
-      color: #fff;
-      font-size: 0.75rem;
-      padding: 2px 6px;
-      border-radius: 4px;
-      cursor: pointer;
-    }
-  `;
-
-  formatTime(isoString) {
-    if (!isoString) return '';
-    const date = new Date(isoString);
-    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
+  constructor() {
+    super();
+    this.block = null;
+    this.task = null;
   }
 
-  toggleLock(e) {
-    e.stopPropagation();
-    if (!this.task) return;
-
-    if (this.block.is_locked) {
-      appState.updateTask(this.task.id, { manual_schedule: null });
-    } else {
-      appState.updateTask(this.task.id, {
-        manual_schedule: {
-          start: this.block.start,
-          end: this.block.end
-        }
-      });
-    }
+  _onClick() {
+    this.dispatchEvent(new CustomEvent('crono-event-click', {
+      detail: { block: this.block, task: this.task },
+      bubbles: true,
+      composed: true
+    }));
   }
 
   render() {
-    if (!this.block) return html``;
+    if (!this.block || !this.task) return html``;
 
-    const task = this.task || appState.tasks.find(t => t.id === this.block.task_id);
-    const tag = task?.tag_ids ? appState.tags.find(t => task.tag_ids.includes(t.id)) : null;
-    const blockColor = tag?.color || task?.color || '#6366F1';
+    const baseColor = this.task.color || '#6366F1';
+    const bgRgba = hexToRgba(baseColor, 0.2);
+    const borderLeftColor = baseColor;
 
-    const startTimeStr = this.formatTime(this.block.start);
-    const endTimeStr = this.formatTime(this.block.end);
+    const isLocked = this.block.is_locked;
+    const alertLevel = this.block.alert_level || 'none';
+
+    let alertClass = '';
+    if (alertLevel === 'red') alertClass = 'alert-red-border';
+    else if (alertLevel === 'orange') alertClass = 'alert-orange-border';
+
+    const startHHMM = this.block.start ? formatHHMM(this.block.start) : '';
+    const endHHMM = this.block.end ? formatHHMM(this.block.end) : '';
 
     return html`
       <div
-        class="event-block"
-        style="background-color: ${blockColor};"
-        title="${task?.title || 'Task'} (${startTimeStr} - ${endTimeStr})"
+        class="block ${alertClass}"
+        style="background-color: ${bgRgba}; border-left: 4px solid ${borderLeftColor};"
+        @click=${this._onClick}
       >
-        <div class="event-header">
-          <div class="title-text">
-            ${this.block.is_locked ? '🔒 ' : ''}${task?.title || 'Scheduled Block'}
-          </div>
-          <div class="badge-group">
-            <alert-badge .level="${this.block.alert_level || 'none'}"></alert-badge>
-            <button class="lock-btn" @click="${this.toggleLock}" title="Toggle Manual Lock">
-              ${this.block.is_locked ? 'Unlock' : 'Lock'}
-            </button>
-          </div>
+        <div class="header">
+          <span class="title">${this.task.title}</span>
+          <span class="icons">
+            ${isLocked ? '🔒' : '🤖'}
+            ${alertLevel === 'orange' ? '⚠' : ''}
+            ${alertLevel === 'red' ? '🔴' : ''}
+          </span>
         </div>
-
-        <div class="time-text">
-          🕒 ${startTimeStr} – ${endTimeStr}
-          ${this.block.is_split_part ? `(Part ${this.block.split_index + 1})` : ''}
-        </div>
+        <div class="time">${startHHMM} - ${endHHMM}</div>
       </div>
     `;
   }
 }
 
-customElements.define('calendar-event-block', CalendarEventBlock);
+customElements.define('crono-calendar-event-block', CronoCalendarEventBlock);

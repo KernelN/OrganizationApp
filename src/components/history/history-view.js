@@ -1,154 +1,122 @@
 import { LitElement, html, css } from 'lit';
-import { appState } from '../../state/app-state.js';
+import { sharedStyles } from '../../styles/shared-styles.js';
+import { appState, AppStateController } from '../../state/app-state.js';
 import './history-stats.js';
 
-export class HistoryView extends LitElement {
+/**
+ * <crono-history-view> — Grouped completed tasks list view.
+ */
+export class CronoHistoryView extends LitElement {
+  static styles = [
+    sharedStyles,
+    css`
+      :host {
+        display: flex;
+        flex-direction: column;
+        height: 100%;
+        gap: var(--space-md);
+        overflow-y: auto;
+      }
+      .history-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+      }
+      .tag-group {
+        background: var(--bg-secondary);
+        border: 1px solid var(--border);
+        border-radius: var(--radius-md);
+        padding: var(--space-md);
+        display: flex;
+        flex-direction: column;
+        gap: var(--space-xs);
+      }
+      .group-title {
+        font-weight: 600;
+        font-size: 14px;
+        color: var(--text-primary);
+        display: flex;
+        align-items: center;
+        gap: var(--space-xs);
+      }
+      .task-item {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: var(--space-xs) 0;
+        border-bottom: 1px dashed var(--border);
+        font-size: 13px;
+      }
+      .task-item:last-child {
+        border-bottom: none;
+      }
+      .task-date {
+        font-size: 11px;
+        color: var(--text-muted);
+      }
+    `
+  ];
+
   static properties = {
-    searchQuery: { type: String }
+    completedTasks: { type: Array }
   };
-
-  static styles = css`
-    :host {
-      display: block;
-    }
-
-    .toolbar {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      margin-bottom: 20px;
-    }
-
-    input[type="search"] {
-      background: var(--color-bg-surface, #1A1C23);
-      border: 1px solid var(--color-border, #2E3242);
-      border-radius: var(--radius-md, 8px);
-      padding: 8px 14px;
-      color: var(--color-text-primary, #F3F4F6);
-      font-size: 0.875rem;
-      width: 260px;
-    }
-
-    .history-list {
-      display: flex;
-      flex-direction: column;
-      gap: 12px;
-    }
-
-    .history-card {
-      background: var(--color-bg-surface, #1A1C23);
-      border: 1px solid var(--color-border-subtle, #242735);
-      border-radius: var(--radius-lg, 12px);
-      padding: 16px;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-    }
-
-    .task-title {
-      font-weight: 600;
-      font-size: 0.9375rem;
-      text-decoration: line-through;
-      color: var(--color-text-secondary, #9CA3AF);
-    }
-
-    .completed-date {
-      font-size: 0.75rem;
-      color: var(--color-success, #10B981);
-      margin-top: 4px;
-    }
-
-    .tag-chip {
-      font-size: 0.75rem;
-      font-weight: 600;
-      padding: 2px 10px;
-      border-radius: 9999px;
-      color: #fff;
-    }
-
-    .empty-state {
-      text-align: center;
-      padding: 48px 24px;
-      background: var(--color-bg-surface, #1A1C23);
-      border: 1px dashed var(--color-border, #2E3242);
-      border-radius: var(--radius-lg, 12px);
-      color: var(--color-text-secondary, #9CA3AF);
-    }
-  `;
 
   constructor() {
     super();
-    this.searchQuery = '';
+    this.appStateCtrl = new AppStateController(this);
+    this.completedTasks = [];
   }
 
-  connectedCallback() {
+  async connectedCallback() {
     super.connectedCallback();
-    this.unsubscribe = appState.subscribe(() => this.requestUpdate());
-  }
-
-  disconnectedCallback() {
-    super.disconnectedCallback();
-    if (this.unsubscribe) this.unsubscribe();
+    this.completedTasks = await appState.dal.getCompletedTasks();
   }
 
   render() {
-    const tasks = appState.tasks || [];
-    let completedTasks = tasks.filter(t => t.status === 'completed');
+    const tags = appState.tags || [];
 
-    if (this.searchQuery.trim()) {
-      const q = this.searchQuery.toLowerCase();
-      completedTasks = completedTasks.filter(t => t.title.toLowerCase().includes(q));
+    // Group completed tasks by tag
+    const grouped = {};
+    for (const t of this.completedTasks) {
+      const tagId = Array.isArray(t.tag_ids) && t.tag_ids[0] ? t.tag_ids[0] : 'untagged';
+      if (!grouped[tagId]) grouped[tagId] = [];
+      grouped[tagId].push(t);
     }
 
-    // Sort by completed_at descending
-    completedTasks.sort((a, b) => new Date(b.completed_at || 0).getTime() - new Date(a.completed_at || 0).getTime());
-
     return html`
-      <history-stats></history-stats>
-
-      <div class="toolbar">
-        <h3 style="font-family: var(--font-family-display);">Completed Tasks Log</h3>
-        <input
-          type="search"
-          placeholder="Filter completed tasks..."
-          .value="${this.searchQuery}"
-          @input="${(e) => (this.searchQuery = e.target.value)}"
-        />
+      <div class="history-header">
+        <h2 style="margin: 0; font-size: 18px;">Completed Tasks History</h2>
       </div>
 
-      <div class="history-list">
-        ${completedTasks.length === 0
-          ? html`
-              <div class="empty-state">
-                <h3>No completed tasks</h3>
-                <p style="margin-top: 8px;">Complete tasks from the Tasks view to log them in history.</p>
-              </div>
-            `
-          : completedTasks.map(task => {
-              const tag = task.tag_ids ? appState.tags.find(t => task.tag_ids.includes(t.id)) : null;
-              const dateStr = task.completed_at
-                ? new Date(task.completed_at).toLocaleString()
-                : 'Completed';
+      <crono-history-stats
+        .completedTasks=${this.completedTasks}
+        .timeLogs=${appState.timeLogs || []}
+      ></crono-history-stats>
 
-              return html`
-                <div class="history-card">
-                  <div>
-                    <div class="task-title">✓ ${task.title}</div>
-                    <div class="completed-date">Completed on ${dateStr}</div>
-                  </div>
-                  <div>
-                    ${tag
-                      ? html`<span class="tag-chip" style="background-color: ${tag.color || '#3B82F6'};">
-                          🏷️ ${tag.name}
-                        </span>`
-                      : ''}
-                  </div>
+      ${Object.keys(grouped).length === 0
+        ? html`<div style="text-align:center; padding:var(--space-2xl); color:var(--text-secondary);">No completed tasks yet.</div>`
+        : Object.entries(grouped).map(([tagId, list]) => {
+            const tagObj = tags.find(tg => tg.id === tagId);
+            const title = tagObj ? tagObj.name : 'Untagged';
+            const color = tagObj ? tagObj.color : '#6366F1';
+
+            return html`
+              <div class="tag-group">
+                <div class="group-title">
+                  <span style="width:10px; height:10px; border-radius:50%; background-color:${color}"></span>
+                  <span>🏷 ${title} (${list.length})</span>
                 </div>
-              `;
-            })}
-      </div>
+                ${list.map(t => html`
+                  <div class="task-item">
+                    <span>✅ ${t.title}</span>
+                    <span class="task-date">${t.completed_at ? t.completed_at.replace('T', ' ').substring(0, 16) : ''}</span>
+                  </div>
+                `)}
+              </div>
+            `;
+          })}
     `;
   }
 }
 
-customElements.define('history-view', HistoryView);
+customElements.define('crono-history-view', CronoHistoryView);
