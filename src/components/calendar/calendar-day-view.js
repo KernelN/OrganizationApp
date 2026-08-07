@@ -2,6 +2,7 @@ import { LitElement, html, css } from 'lit';
 import { sharedStyles } from '../../styles/shared-styles.js';
 import { getDayName, formatDateISO } from '../../utils/date-utils.js';
 import { hexToRgba } from '../../utils/color-utils.js';
+import { mergeContiguousBlocks } from '../../utils/block-utils.js';
 import './calendar-event-block.js';
 
 /**
@@ -120,12 +121,13 @@ export class CronoCalendarDayView extends LitElement {
     const dayName = getDayName(this.selectedDate);
     const breakWindows = (this.settings.break_windows && this.settings.break_windows[dayName]) || [];
 
-    // Filter blocks for selected date
-    const dayBlocks = this.blocks.filter(b => {
+    // Filter blocks for selected date and merge contiguous task slots into single task blocks
+    const rawDayBlocks = this.blocks.filter(b => {
       if (!b.start) return false;
       const bDateStr = formatDateISO(new Date(b.start));
       return bDateStr === this.selectedDate || b.start.startsWith(this.selectedDate);
     });
+    const dayBlocks = mergeContiguousBlocks(rawDayBlocks);
 
     // Filter tag windows for selected date
     const dayTagWindows = this.tagWindowsComputed.filter(tw => tw.date === this.selectedDate);

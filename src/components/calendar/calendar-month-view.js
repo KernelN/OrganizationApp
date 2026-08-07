@@ -2,11 +2,12 @@ import { LitElement, html, css } from 'lit';
 import { sharedStyles } from '../../styles/shared-styles.js';
 import { formatDateISO, parseISOToLocalDate } from '../../utils/date-utils.js';
 import { hexToRgba } from '../../utils/color-utils.js';
+import { mergeContiguousBlocks } from '../../utils/block-utils.js';
 
 const DAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
 /**
- * <crono-calendar-month-view> — Month view with task dots and tag window chips.
+ * <crono-calendar-month-view> — Month view with nested tag window containers and merged task blocks.
  */
 export class CronoCalendarMonthView extends LitElement {
   static styles = [
@@ -35,7 +36,7 @@ export class CronoCalendarMonthView extends LitElement {
       }
       .day-cell {
         background: var(--bg-secondary);
-        min-height: 90px;
+        min-height: 100px;
         padding: var(--space-xs);
         display: flex;
         flex-direction: column;
@@ -50,33 +51,48 @@ export class CronoCalendarMonthView extends LitElement {
       }
       .day-num {
         font-size: 12px;
-        font-weight: 500;
+        font-weight: 600;
         color: var(--text-secondary);
       }
-      .dots {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 4px;
-      }
-      .dot {
-        width: 8px;
-        height: 8px;
-        border-radius: 50%;
-      }
-      .tag-chips {
+      .month-tag-box {
+        border-radius: var(--radius-sm);
+        border: 1px dashed var(--border);
+        padding: 3px 4px;
         display: flex;
         flex-direction: column;
         gap: 2px;
-        margin-top: 2px;
+        box-sizing: border-box;
       }
-      .tag-chip {
+      .month-tag-title {
         font-size: 10px;
-        font-weight: 600;
+        font-weight: 700;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .month-nested-task {
+        font-size: 10px;
+        font-weight: 500;
         padding: 1px 4px;
         border-radius: 2px;
         white-space: nowrap;
         overflow: hidden;
         text-overflow: ellipsis;
+        display: flex;
+        align-items: center;
+        gap: 4px;
+      }
+      .task-color-dot {
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        flex-shrink: 0;
+      }
+      .month-untagged-box {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+        margin-top: 2px;
       }
     `
   ];
@@ -130,12 +146,15 @@ export class CronoCalendarMonthView extends LitElement {
       <div class="month-grid">
         ${DAY_LABELS.map(l => html`<div class="header-cell">${l}</div>`)}
         ${monthDays.map(d => {
-          const dayBlocks = this.blocks.filter(b => {
+          const rawDayBlocks = this.blocks.filter(b => {
             if (!b.start) return false;
             const bDateStr = formatDateISO(new Date(b.start));
             return bDateStr === d.dateStr || b.start.startsWith(d.dateStr);
           });
+          const dayBlocks = mergeContiguousBlocks(rawDayBlocks);
           const dayTagWindows = (this.tagWindowsComputed || []).filter(tw => tw.date === d.dateStr);
+
+          const renderedBlockIds = new Set();
 
           return html`
             <div
@@ -144,33 +163,61 @@ export class CronoCalendarMonthView extends LitElement {
             >
               <span class="day-num">${d.dayNum}</span>
 
-              ${dayTagWindows.length > 0
-                ? html`
-                    <div class="tag-chips">
-                      ${dayTagWindows.map(tw => {
-                        const tag = this.tags.find(t => t.id === tw.tag_id) || { name: 'Tag', color: '#3B82F6' };
-                        const bgRgba = hexToRgba(tag.color, 0.2);
-                        return html`
-                          <div
-                            class="tag-chip"
-                            style="background: ${bgRgba}; border-left: 2px solid ${tag.color}; color: ${tag.color};"
-                            title="${tag.name}"
-                          >
-                            🏷️ ${tag.name}
-                          </div>
-                        `;
-                      })}
-                    </div>
-                  `
-                : ''}
+              <!-- Render Tag Windows with Nested Tasks -->
+              ${dayTagWindows.map(tw => {
+                const tag = this.tags.find(t => t.id === tw.tag_id) || { id: tw.tag_id, name: 'Tag', color: '#3B82F6' };
+                const bgRgba = hexToRgba(tag.color, 0.15);
 
-              <div class="dots">
-                ${dayBlocks.slice(0, 5).map(b => {
-                  const t = this.tasks.find(tk => tk.id === b.task_id);
-                  const color = t ? t.color : '#6366F1';
-                  return html`<div class="dot" style="background-color: ${color}"></div>`;
-                })}
-              </div>
+                const tagBlocks = dayBlocks.filter(b => {
+                  if (b.tag_id === tag.id) return true;
+                  const task = this.tasks.find(t => t.id === b.task_id);
+                  return task && Array.isArray(task.tag_ids) && task.tag_ids.includes(tag.id);
+                });
+
+                tagBlocks.forEach(b => renderedBlockIds.add(b.id));
+
+                return html`
+                  <div
+                    class="month-tag-box"
+                    style="background: ${bgRgba}; border-color: ${tag.color};"
+                  >
+                    <div class="month-tag-title" style="color: ${tag.color};">
+                      🏷️ ${tag.name}
+                    </div>
+                    ${tagBlocks.map(b => {
+                      const task = this.tasks.find(t => t.id === b.task_id) || { title: 'Task', color: tag.color };
+                      const color = task.color || tag.color;
+                      return html`
+                        <div class="month-nested-task" style="background: rgba(255, 255, 255, 0.05);">
+                          <span class="task-color-dot" style="background-color: ${color}"></span>
+                          <span>${task.title}</span>
+                        </div>
+                      `;
+                    })}
+                  </div>
+                `;
+              })}
+
+              <!-- Render Untagged Tasks -->
+              ${(() => {
+                const untaggedBlocks = dayBlocks.filter(b => !renderedBlockIds.has(b.id));
+                if (untaggedBlocks.length === 0) return '';
+                return html`
+                  <div class="month-untagged-box">
+                    ${untaggedBlocks.map(b => {
+                      const task = this.tasks.find(t => t.id === b.task_id) || { title: 'Task', color: '#6366F1' };
+                      const color = task.color || '#6366F1';
+                      const taskBg = hexToRgba(color, 0.15);
+                      return html`
+                        <div class="month-nested-task" style="background: ${taskBg}; color: var(--text-primary);">
+                          <span class="task-color-dot" style="background-color: ${color}"></span>
+                          <span>${task.title}</span>
+                        </div>
+                      `;
+                    })}
+                  </div>
+                `;
+              })()}
             </div>
           `;
         })}

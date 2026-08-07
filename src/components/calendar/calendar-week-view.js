@@ -2,12 +2,13 @@ import { LitElement, html, css } from 'lit';
 import { sharedStyles } from '../../styles/shared-styles.js';
 import { getDayOfWeekIndex, getDayName, addDays, formatDateISO, parseISOToLocalDate } from '../../utils/date-utils.js';
 import { hexToRgba } from '../../utils/color-utils.js';
+import { mergeContiguousBlocks } from '../../utils/block-utils.js';
 import './calendar-event-block.js';
 
 const DAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
 /**
- * <crono-calendar-week-view> — 7-column day grid week view with event blocks, tag windows, and breaks.
+ * <crono-calendar-week-view> — 7-column day grid week view with tag window containers and nested task blocks.
  */
 export class CronoCalendarWeekView extends LitElement {
   static styles = [
@@ -49,20 +50,53 @@ export class CronoCalendarWeekView extends LitElement {
         text-align: center;
         margin-bottom: var(--space-xs);
       }
-      .day-tag-windows {
-        display: flex;
-        flex-direction: column;
-        gap: 4px;
-        margin-bottom: var(--space-xs);
-      }
-      .tag-window-badge {
+      .break-window-badge {
         font-size: 11px;
         font-weight: 600;
-        padding: 3px 6px;
+        padding: 4px 6px;
         border-radius: var(--radius-sm);
-        white-space: nowrap;
-        overflow: hidden;
-        text-overflow: ellipsis;
+        margin-bottom: var(--space-xs);
+      }
+      .tag-window-box {
+        border-radius: var(--radius-md);
+        border: 1px dashed var(--border);
+        padding: 6px;
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        margin-bottom: var(--space-xs);
+      }
+      .tag-window-header {
+        font-size: 11px;
+        font-weight: 700;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 2px 4px;
+        border-radius: var(--radius-sm);
+      }
+      .tag-window-body {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+      }
+      .untagged-section {
+        border-radius: var(--radius-md);
+        border: 1px solid var(--border);
+        background: var(--bg-tertiary);
+        padding: 6px;
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+      }
+      .untagged-header {
+        font-size: 11px;
+        font-weight: 600;
+        color: var(--text-muted);
+        padding: 2px 4px;
+      }
+      .block-item {
+        min-height: 44px;
       }
     `
   ];
@@ -115,58 +149,94 @@ export class CronoCalendarWeekView extends LitElement {
           `
         )}
         ${weekDays.map((wd) => {
-          const dayBlocks = this.blocks.filter((b) => {
+          const rawDayBlocks = this.blocks.filter((b) => {
             if (!b.start) return false;
             const bDateStr = formatDateISO(new Date(b.start));
             return bDateStr === wd.dateStr || b.start.startsWith(wd.dateStr);
-          }).sort((a, b) => new Date(a.start).getTime() - new Date(b.start).getTime());
+          });
+          const dayBlocks = mergeContiguousBlocks(rawDayBlocks);
 
           const dayTagWindows = (this.tagWindowsComputed || []).filter(tw => tw.date === wd.dateStr);
           const dayName = getDayName(wd.dateStr);
           const breakWindows = (this.settings?.break_windows && this.settings.break_windows[dayName]) || [];
 
+          // Track which block IDs have been rendered inside a tag window
+          const renderedBlockIds = new Set();
+
           return html`
             <div class="day-column">
-              ${(dayTagWindows.length > 0 || breakWindows.length > 0)
-                ? html`
-                    <div class="day-tag-windows">
-                      ${breakWindows.map(bw => html`
-                        <div
-                          class="tag-window-badge"
-                          style="background: rgba(239, 68, 68, 0.15); border-left: 3px solid var(--alert-red); color: var(--alert-red);"
-                          title="Break: ${bw.start} - ${bw.end}"
-                        >
-                          ☕ Break (${bw.start} - ${bw.end})
-                        </div>
-                      `)}
-                      ${dayTagWindows.map(tw => {
-                        const tag = this.tags.find(t => t.id === tw.tag_id) || { name: 'Tag', color: '#3B82F6' };
-                        const bgRgba = hexToRgba(tag.color, 0.15);
-                        return (tw.windows || []).map(w => html`
-                          <div
-                            class="tag-window-badge"
-                            style="background: ${bgRgba}; border-left: 3px solid ${tag.color}; color: ${tag.color};"
-                            title="${tag.name}: ${w.start} - ${w.end}"
-                          >
-                            🏷️ ${tag.name} (${w.start} - ${w.end})
+              <!-- Render Break Windows -->
+              ${breakWindows.map(bw => html`
+                <div
+                  class="break-window-badge"
+                  style="background: rgba(239, 68, 68, 0.12); border-left: 3px solid var(--alert-red); color: var(--alert-red);"
+                  title="Break: ${bw.start} - ${bw.end}"
+                >
+                  ☕ Break (${bw.start} - ${bw.end})
+                </div>
+              `)}
+
+              <!-- Render Tag Window Containers with Nested Tasks -->
+              ${dayTagWindows.map(tw => {
+                const tag = this.tags.find(t => t.id === tw.tag_id) || { id: tw.tag_id, name: 'Tag', color: '#3B82F6' };
+                const bgRgba = hexToRgba(tag.color, 0.08);
+
+                // Find blocks associated with this tag
+                const tagBlocks = dayBlocks.filter(b => {
+                  if (b.tag_id === tag.id) return true;
+                  const task = this.tasks.find(t => t.id === b.task_id);
+                  return task && Array.isArray(task.tag_ids) && task.tag_ids.includes(tag.id);
+                });
+
+                tagBlocks.forEach(b => renderedBlockIds.add(b.id));
+
+                return (tw.windows || []).map(w => html`
+                  <div
+                    class="tag-window-box"
+                    style="background: ${bgRgba}; border-color: ${tag.color};"
+                  >
+                    <div class="tag-window-header" style="color: ${tag.color};">
+                      <span>🏷️ ${tag.name}</span>
+                      <span>${w.start} - ${w.end}</span>
+                    </div>
+                    <div class="tag-window-body">
+                      ${tagBlocks.map(block => {
+                        const task = this.tasks.find(t => t.id === block.task_id) || { title: 'Task', color: tag.color };
+                        return html`
+                          <div class="block-item">
+                            <crono-calendar-event-block
+                              .block=${block}
+                              .task=${task}
+                            ></crono-calendar-event-block>
                           </div>
-                        `);
+                        `;
                       })}
                     </div>
-                  `
-                : ''}
+                  </div>
+                `);
+              })}
 
-              ${dayBlocks.map((block) => {
-                const task = this.tasks.find((t) => t.id === block.task_id) || { title: 'Task', color: '#6366F1' };
+              <!-- Render Untagged Tasks Container -->
+              ${(() => {
+                const untaggedBlocks = dayBlocks.filter(b => !renderedBlockIds.has(b.id));
+                if (untaggedBlocks.length === 0) return '';
                 return html`
-                  <div style="height: 48px;">
-                    <crono-calendar-event-block
-                      .block=${block}
-                      .task=${task}
-                    ></crono-calendar-event-block>
+                  <div class="untagged-section">
+                    <div class="untagged-header">📋 Other Tasks</div>
+                    ${untaggedBlocks.map(block => {
+                      const task = this.tasks.find(t => t.id === block.task_id) || { title: 'Task', color: '#6366F1' };
+                      return html`
+                        <div class="block-item">
+                          <crono-calendar-event-block
+                            .block=${block}
+                            .task=${task}
+                          ></crono-calendar-event-block>
+                        </div>
+                      `;
+                    })}
                   </div>
                 `;
-              })}
+              })()}
             </div>
           `;
         })}
