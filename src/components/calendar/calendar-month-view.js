@@ -49,10 +49,28 @@ export class CronoCalendarMonthView extends LitElement {
       .day-cell.other-month {
         opacity: 0.4;
       }
+      .day-cell.is-today {
+        background: hsla(var(--accent-h), var(--accent-s), var(--accent-l), 0.06);
+        box-shadow: inset 0 0 0 2px var(--accent);
+      }
+      .day-num-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+      }
       .day-num {
         font-size: 12px;
         font-weight: 600;
         color: var(--text-secondary);
+      }
+      .today-chip {
+        font-size: 9px;
+        font-weight: 700;
+        background: var(--accent);
+        color: #ffffff;
+        padding: 1px 4px;
+        border-radius: 3px;
+        text-transform: uppercase;
       }
       .month-tag-box {
         border-radius: var(--radius-sm);
@@ -141,11 +159,13 @@ export class CronoCalendarMonthView extends LitElement {
 
   render() {
     const monthDays = this.getMonthDays();
+    const todayStr = formatDateISO(new Date());
 
     return html`
       <div class="month-grid">
         ${DAY_LABELS.map(l => html`<div class="header-cell">${l}</div>`)}
         ${monthDays.map(d => {
+          const isToday = d.dateStr === todayStr;
           const rawDayBlocks = this.blocks.filter(b => {
             if (!b.start) return false;
             const bDateStr = formatDateISO(new Date(b.start));
@@ -158,10 +178,13 @@ export class CronoCalendarMonthView extends LitElement {
 
           return html`
             <div
-              class="day-cell ${d.isCurrentMonth ? '' : 'other-month'}"
+              class="day-cell ${d.isCurrentMonth ? '' : 'other-month'} ${isToday ? 'is-today' : ''}"
               @click=${() => this.dispatchEvent(new CustomEvent('crono-date-select', { detail: { date: d.dateStr }, bubbles: true, composed: true }))}
             >
-              <span class="day-num">${d.dayNum}</span>
+              <div class="day-num-header">
+                <span class="day-num">${d.dayNum}</span>
+                ${isToday ? html`<span class="today-chip">Today</span>` : ''}
+              </div>
 
               <!-- Render Tag Windows with Nested Tasks -->
               ${dayTagWindows.map(tw => {

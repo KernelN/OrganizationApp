@@ -35,6 +35,23 @@ export class CronoCalendarWeekView extends LitElement {
         font-weight: 600;
         font-size: 13px;
         border-bottom: 1px solid var(--border);
+        position: relative;
+      }
+      .day-header.is-today {
+        background: var(--accent-muted);
+        color: var(--accent);
+        border-bottom: 2px solid var(--accent);
+      }
+      .today-badge {
+        display: inline-block;
+        font-size: 9px;
+        font-weight: 700;
+        text-transform: uppercase;
+        background: var(--accent);
+        color: #ffffff;
+        padding: 1px 4px;
+        border-radius: 4px;
+        margin-top: 2px;
       }
       .day-column {
         background: var(--bg-secondary);
@@ -43,6 +60,11 @@ export class CronoCalendarWeekView extends LitElement {
         display: flex;
         flex-direction: column;
         gap: var(--space-xs);
+        position: relative;
+      }
+      .day-column.is-today {
+        background: hsla(var(--accent-h), var(--accent-s), var(--accent-l), 0.04);
+        box-shadow: inset 0 0 0 1px var(--accent-glow);
       }
       .day-number {
         font-size: 12px;
@@ -65,6 +87,11 @@ export class CronoCalendarWeekView extends LitElement {
         flex-direction: column;
         gap: 6px;
         margin-bottom: var(--space-xs);
+        cursor: pointer;
+        transition: background-color var(--transition-fast), border-color var(--transition-fast);
+      }
+      .tag-window-box:hover {
+        border-style: solid;
       }
       .tag-window-header {
         font-size: 11px;
@@ -98,6 +125,18 @@ export class CronoCalendarWeekView extends LitElement {
       .block-item {
         min-height: 44px;
       }
+      .today-current-time-banner {
+        background: var(--alert-red);
+        color: #ffffff;
+        font-size: 10px;
+        font-weight: 700;
+        padding: 2px 6px;
+        border-radius: var(--radius-sm);
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: var(--space-xs);
+      }
     `
   ];
 
@@ -107,7 +146,8 @@ export class CronoCalendarWeekView extends LitElement {
     tasks: { type: Array },
     tags: { type: Array },
     tagWindowsComputed: { type: Array },
-    settings: { type: Object }
+    settings: { type: Object },
+    nowDate: { type: Object }
   };
 
   constructor() {
@@ -118,6 +158,28 @@ export class CronoCalendarWeekView extends LitElement {
     this.tags = [];
     this.tagWindowsComputed = [];
     this.settings = {};
+    this.nowDate = new Date();
+    this._timer = null;
+  }
+
+  connectedCallback() {
+    super.connectedCallback();
+    this._timer = setInterval(() => {
+      this.nowDate = new Date();
+    }, 60000);
+  }
+
+  disconnectedCallback() {
+    super.disconnectedCallback();
+    if (this._timer) clearInterval(this._timer);
+  }
+
+  _onTagClick(tag) {
+    this.dispatchEvent(new CustomEvent('crono-tag-click', {
+      detail: { tag },
+      bubbles: true,
+      composed: true
+    }));
   }
 
   getWeekDays() {
@@ -137,18 +199,25 @@ export class CronoCalendarWeekView extends LitElement {
 
   render() {
     const weekDays = this.getWeekDays();
+    const todayStr = formatDateISO(this.nowDate);
+    const nowHHMM = `${String(this.nowDate.getHours()).padStart(2, '0')}:${String(this.nowDate.getMinutes()).padStart(2, '0')}`;
 
     return html`
       <div class="week-grid">
         ${weekDays.map(
-          (wd) => html`
-            <div class="day-header">
-              <div>${wd.label}</div>
-              <div class="day-number">${wd.dayNum}</div>
-            </div>
-          `
+          (wd) => {
+            const isToday = wd.dateStr === todayStr;
+            return html`
+              <div class="day-header ${isToday ? 'is-today' : ''}">
+                <div>${wd.label}</div>
+                <div class="day-number">${wd.dayNum}</div>
+                ${isToday ? html`<div class="today-badge">Today</div>` : ''}
+              </div>
+            `;
+          }
         )}
         ${weekDays.map((wd) => {
+          const isToday = wd.dateStr === todayStr;
           const rawDayBlocks = this.blocks.filter((b) => {
             if (!b.start) return false;
             const bDateStr = formatDateISO(new Date(b.start));
@@ -164,7 +233,17 @@ export class CronoCalendarWeekView extends LitElement {
           const renderedBlockIds = new Set();
 
           return html`
-            <div class="day-column">
+            <div class="day-column ${isToday ? 'is-today' : ''}">
+              <!-- Live Current Time Banner for Today -->
+              ${isToday
+                ? html`
+                    <div class="today-current-time-banner" title="Current Time">
+                      <span>⏰ Live Time</span>
+                      <span>${nowHHMM}</span>
+                    </div>
+                  `
+                : ''}
+
               <!-- Render Break Windows -->
               ${breakWindows.map(bw => html`
                 <div
@@ -194,6 +273,7 @@ export class CronoCalendarWeekView extends LitElement {
                   <div
                     class="tag-window-box"
                     style="background: ${bgRgba}; border-color: ${tag.color};"
+                    @click=${() => this._onTagClick(tag)}
                   >
                     <div class="tag-window-header" style="color: ${tag.color};">
                       <span>🏷️ ${tag.name}</span>
@@ -203,7 +283,10 @@ export class CronoCalendarWeekView extends LitElement {
                       ${tagBlocks.map(block => {
                         const task = this.tasks.find(t => t.id === block.task_id) || { title: 'Task', color: tag.color };
                         return html`
-                          <div class="block-item">
+                          <div
+                            class="block-item"
+                            @click=${(e) => e.stopPropagation()}
+                          >
                             <crono-calendar-event-block
                               .block=${block}
                               .task=${task}

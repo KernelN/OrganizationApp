@@ -5,6 +5,9 @@ import { appState, AppStateController } from '../../state/app-state.js';
 import './calendar-day-view.js';
 import './calendar-week-view.js';
 import './calendar-month-view.js';
+import '../tasks/task-form.js';
+import '../tags/tag-form.js';
+import '../shared/drawer-panel.js';
 
 /**
  * <crono-calendar-view> — Parent calendar container supporting Day/Week/Month views.
@@ -70,7 +73,11 @@ export class CronoCalendarView extends LitElement {
 
   static properties = {
     mode: { type: String }, // 'day' | 'week' | 'month'
-    selectedDate: { type: String }
+    selectedDate: { type: String },
+    taskDrawerOpen: { type: Boolean },
+    tagDrawerOpen: { type: Boolean },
+    editingTask: { type: Object },
+    editingTag: { type: Object }
   };
 
   constructor() {
@@ -78,6 +85,10 @@ export class CronoCalendarView extends LitElement {
     this.appStateCtrl = new AppStateController(this);
     this.mode = 'day';
     this.selectedDate = formatDateISO(new Date());
+    this.taskDrawerOpen = false;
+    this.tagDrawerOpen = false;
+    this.editingTask = null;
+    this.editingTag = null;
   }
 
   _navigate(offset) {
@@ -90,6 +101,22 @@ export class CronoCalendarView extends LitElement {
 
   _goToday() {
     this.selectedDate = formatDateISO(new Date());
+  }
+
+  _onEventClick(e) {
+    const { task } = e.detail;
+    if (task && task.id) {
+      this.editingTask = task;
+      this.taskDrawerOpen = true;
+    }
+  }
+
+  _onTagClick(e) {
+    const { tag } = e.detail;
+    if (tag && tag.id) {
+      this.editingTag = tag;
+      this.tagDrawerOpen = true;
+    }
   }
 
   render() {
@@ -141,6 +168,8 @@ export class CronoCalendarView extends LitElement {
                 .tags=${tags}
                 .tagWindowsComputed=${tagWindowsComputed}
                 .settings=${settings}
+                @crono-event-click=${this._onEventClick}
+                @crono-tag-click=${this._onTagClick}
               ></crono-calendar-day-view>
             `
           : this.mode === 'week'
@@ -152,6 +181,8 @@ export class CronoCalendarView extends LitElement {
                 .tags=${tags}
                 .tagWindowsComputed=${tagWindowsComputed}
                 .settings=${settings}
+                @crono-event-click=${this._onEventClick}
+                @crono-tag-click=${this._onTagClick}
               ></crono-calendar-week-view>
             `
           : html`
@@ -168,6 +199,34 @@ export class CronoCalendarView extends LitElement {
               ></crono-calendar-month-view>
             `}
       </div>
+
+      <!-- Task Editing Drawer -->
+      <crono-drawer-panel
+        .open=${this.taskDrawerOpen}
+        title="Edit Task"
+        @crono-drawer:close=${() => (this.taskDrawerOpen = false)}
+      >
+        <crono-task-form
+          .task=${this.editingTask}
+          @crono-task-form:cancel=${() => (this.taskDrawerOpen = false)}
+          @crono-task-form:save=${() => (this.taskDrawerOpen = false)}
+          @crono-task-form:delete=${() => (this.taskDrawerOpen = false)}
+        ></crono-task-form>
+      </crono-drawer-panel>
+
+      <!-- Tag Editing Drawer -->
+      <crono-drawer-panel
+        .open=${this.tagDrawerOpen}
+        title="Edit Tag"
+        @crono-drawer:close=${() => (this.tagDrawerOpen = false)}
+      >
+        <crono-tag-form
+          .tag=${this.editingTag}
+          @crono-tag-form:cancel=${() => (this.tagDrawerOpen = false)}
+          @crono-tag-form:save=${() => (this.tagDrawerOpen = false)}
+          @crono-tag-form:delete=${() => (this.tagDrawerOpen = false)}
+        ></crono-tag-form>
+      </crono-drawer-panel>
     `;
   }
 }

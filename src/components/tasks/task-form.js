@@ -5,7 +5,7 @@ import { appState } from '../../state/app-state.js';
 import '../shared/color-picker.js';
 
 /**
- * <crono-task-form> — Create and edit form for tasks.
+ * <crono-task-form> — Create and edit form for tasks with multi-unit time inputs.
  */
 export class CronoTaskForm extends LitElement {
   static styles = [
@@ -34,6 +34,7 @@ export class CronoTaskForm extends LitElement {
       .row {
         display: flex;
         gap: var(--space-md);
+        align-items: flex-start;
       }
       .row > * {
         flex: 1;
@@ -108,34 +109,47 @@ export class CronoTaskForm extends LitElement {
       color: '#6366F1',
       priority: 0,
       tag_ids: [],
-      duration_hours: 1,
       deadline: '',
-      alert_window_hours: 24,
       splittable: true,
       ignore_breaks: false,
       recurrence: null
     };
+    this.durationHours = 1;
+    this.durationMins = 0;
+    this.alertDays = 1;
+    this.alertHours = 0;
+
     this.selectedDepId = '';
     this.selectedDepType = 'hard';
-    this.newLogHours = 1;
+    this.logHours = 1;
+    this.logMins = 0;
     this.newLogNote = '';
   }
 
   willUpdate(changedProperties) {
     if (changedProperties.has('task') && this.task) {
+      const dur = this.task.duration_hours || 1;
+      this.durationHours = Math.floor(dur);
+      this.durationMins = Math.round((dur - this.durationHours) * 60);
+
+      const alertTot = this.task.alert_window_hours ?? 24;
+      this.alertDays = Math.floor(alertTot / 24);
+      this.alertHours = Math.round(alertTot % 24);
+
       this.formData = {
         title: this.task.title || '',
         description: this.task.description || '',
         color: this.task.color || '#6366F1',
         priority: this.task.priority || 0,
         tag_ids: Array.isArray(this.task.tag_ids) ? [...this.task.tag_ids] : [],
-        duration_hours: this.task.duration_hours || 1,
         deadline: this.task.deadline ? this.task.deadline.substring(0, 16) : '',
-        alert_window_hours: this.task.alert_window_hours ?? 24,
         splittable: this.task.splittable ?? true,
         ignore_breaks: this.task.ignore_breaks ?? false,
         recurrence: this.task.recurrence ? { ...this.task.recurrence } : null
       };
+
+      this.logHours = 1;
+      this.logMins = 0;
     }
   }
 
@@ -158,11 +172,15 @@ export class CronoTaskForm extends LitElement {
 
   _onSubmit(e) {
     e.preventDefault();
+
+    const computedDuration = Number(this.durationHours || 0) + (Number(this.durationMins || 0) / 60);
+    const computedAlert = (Number(this.alertDays || 0) * 24) + Number(this.alertHours || 0);
+
     const payload = {
       ...this.formData,
       priority: Number(this.formData.priority),
-      duration_hours: Number(this.formData.duration_hours),
-      alert_window_hours: this.formData.deadline ? Number(this.formData.alert_window_hours) : null,
+      duration_hours: Math.max(0.01, computedDuration),
+      alert_window_hours: this.formData.deadline ? computedAlert : null,
       deadline: this.formData.deadline ? new Date(this.formData.deadline).toISOString() : null
     };
 
@@ -190,10 +208,11 @@ export class CronoTaskForm extends LitElement {
   }
 
   async _addTimeLog() {
-    if (!this.task || !this.task.id || !this.newLogHours) return;
+    const loggedTot = Number(this.logHours || 0) + (Number(this.logMins || 0) / 60);
+    if (!this.task || !this.task.id || loggedTot <= 0) return;
     await appState.createTimeLog({
       task_id: this.task.id,
-      logged_hours: Number(this.newLogHours),
+      logged_hours: loggedTot,
       notes: this.newLogNote
     });
     this.newLogNote = '';
@@ -228,11 +247,11 @@ export class CronoTaskForm extends LitElement {
         </div>
 
         <div class="row">
-          <div class="form-group">
+          <div class="form-group" style="flex: 0 0 100px;">
             <label>Priority (0-10)</label>
             <input
               type="number"
-              class="crono-input"
+              class="crono-input crono-input-num-sm"
               min="0"
               max="10"
               .value=${String(this.formData.priority)}
@@ -241,16 +260,27 @@ export class CronoTaskForm extends LitElement {
           </div>
 
           <div class="form-group">
-            <label>Duration (Hours)</label>
-            <input
-              type="number"
-              step="0.25"
-              min="0.25"
-              class="crono-input"
-              required
-              .value=${String(this.formData.duration_hours)}
-              @input=${(e) => (this.formData.duration_hours = e.target.value)}
-            />
+            <label>Duration</label>
+            <div class="unit-pair">
+              <input
+                type="number"
+                min="0"
+                max="999"
+                class="crono-input crono-input-num-sm"
+                .value=${String(this.durationHours)}
+                @input=${(e) => (this.durationHours = Number(e.target.value))}
+              />
+              <span>hrs</span>
+              <input
+                type="number"
+                min="0"
+                max="59"
+                class="crono-input crono-input-num-sm"
+                .value=${String(this.durationMins)}
+                @input=${(e) => (this.durationMins = Number(e.target.value))}
+              />
+              <span>mins</span>
+            </div>
           </div>
         </div>
 
@@ -291,13 +321,27 @@ export class CronoTaskForm extends LitElement {
           </div>
 
           <div class="form-group">
-            <label>Alert Window (Hours before deadline)</label>
-            <input
-              type="number"
-              class="crono-input"
-              .value=${String(this.formData.alert_window_hours)}
-              @input=${(e) => (this.formData.alert_window_hours = e.target.value)}
-            />
+            <label>Alert Window</label>
+            <div class="unit-pair">
+              <input
+                type="number"
+                min="0"
+                max="999"
+                class="crono-input crono-input-num-sm"
+                .value=${String(this.alertDays)}
+                @input=${(e) => (this.alertDays = Number(e.target.value))}
+              />
+              <span>days</span>
+              <input
+                type="number"
+                min="0"
+                max="23"
+                class="crono-input crono-input-num-sm"
+                .value=${String(this.alertHours)}
+                @input=${(e) => (this.alertHours = Number(e.target.value))}
+              />
+              <span>hrs</span>
+            </div>
           </div>
         </div>
 
@@ -351,15 +395,29 @@ export class CronoTaskForm extends LitElement {
           </div>
 
           <div class="section-divider">Time Tracking Log</div>
-          <div class="row">
-            <input
-              type="number"
-              step="0.25"
-              class="crono-input"
-              placeholder="Hours"
-              .value=${String(this.newLogHours)}
-              @input=${e => this.newLogHours = e.target.value}
-            />
+          <div class="row" style="align-items: center;">
+            <div class="unit-pair" style="flex-shrink: 0;">
+              <input
+                type="number"
+                min="0"
+                max="999"
+                class="crono-input crono-input-num-sm"
+                placeholder="H"
+                .value=${String(this.logHours)}
+                @input=${e => (this.logHours = Number(e.target.value))}
+              />
+              <span>h</span>
+              <input
+                type="number"
+                min="0"
+                max="59"
+                class="crono-input crono-input-num-sm"
+                placeholder="M"
+                .value=${String(this.logMins)}
+                @input=${e => (this.logMins = Number(e.target.value))}
+              />
+              <span>m</span>
+            </div>
             <input
               type="text"
               class="crono-input"

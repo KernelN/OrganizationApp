@@ -79,7 +79,8 @@ export class CronoCalendarDayView extends LitElement {
         left: 0;
         right: 0;
         z-index: 1;
-        pointer-events: none;
+        pointer-events: auto;
+        cursor: pointer;
         box-sizing: border-box;
         padding: 4px var(--space-sm);
         display: flex;
@@ -87,12 +88,46 @@ export class CronoCalendarDayView extends LitElement {
         font-size: 11px;
         font-weight: 600;
         letter-spacing: 0.02em;
+        transition: opacity var(--transition-fast);
+      }
+      .tag-window-strip:hover {
+        opacity: 0.9;
       }
       .block-wrapper {
         position: absolute;
         left: var(--space-sm);
         right: var(--space-sm);
         z-index: 2;
+      }
+      .current-time-line {
+        position: absolute;
+        left: 0;
+        right: 0;
+        height: 2px;
+        background: var(--alert-red);
+        z-index: 5;
+        pointer-events: none;
+        display: flex;
+        align-items: center;
+      }
+      .current-time-dot {
+        width: 10px;
+        height: 10px;
+        background: var(--alert-red);
+        border-radius: 50%;
+        margin-left: -5px;
+        box-shadow: 0 0 8px var(--alert-red);
+        flex-shrink: 0;
+      }
+      .current-time-label {
+        font-family: var(--font-mono);
+        font-size: 10px;
+        font-weight: 700;
+        background: var(--alert-red);
+        color: #ffffff;
+        padding: 1px 5px;
+        border-radius: 3px;
+        margin-left: 4px;
       }
     `
   ];
@@ -103,7 +138,8 @@ export class CronoCalendarDayView extends LitElement {
     tasks: { type: Array },
     tags: { type: Array },
     tagWindowsComputed: { type: Array },
-    settings: { type: Object }
+    settings: { type: Object },
+    nowDate: { type: Object }
   };
 
   constructor() {
@@ -114,6 +150,28 @@ export class CronoCalendarDayView extends LitElement {
     this.tags = [];
     this.tagWindowsComputed = [];
     this.settings = {};
+    this.nowDate = new Date();
+    this._timer = null;
+  }
+
+  connectedCallback() {
+    super.connectedCallback();
+    this._timer = setInterval(() => {
+      this.nowDate = new Date();
+    }, 60000);
+  }
+
+  disconnectedCallback() {
+    super.disconnectedCallback();
+    if (this._timer) clearInterval(this._timer);
+  }
+
+  _onTagClick(tag) {
+    this.dispatchEvent(new CustomEvent('crono-tag-click', {
+      detail: { tag },
+      bubbles: true,
+      composed: true
+    }));
   }
 
   render() {
@@ -132,6 +190,12 @@ export class CronoCalendarDayView extends LitElement {
     // Filter tag windows for selected date
     const dayTagWindows = this.tagWindowsComputed.filter(tw => tw.date === this.selectedDate);
 
+    // Current time indicator calculation
+    const todayStr = formatDateISO(this.nowDate);
+    const isToday = this.selectedDate === todayStr;
+    const nowMins = this.nowDate.getHours() * 60 + this.nowDate.getMinutes();
+    const nowHHMM = `${String(this.nowDate.getHours()).padStart(2, '0')}:${String(this.nowDate.getMinutes()).padStart(2, '0')}`;
+
     return html`
       <div class="grid-container">
         <div class="time-column">
@@ -141,6 +205,20 @@ export class CronoCalendarDayView extends LitElement {
         </div>
         <div class="slots-column">
           ${hours.map(h => html`<div class="hour-line"></div>`)}
+
+          <!-- Current Time Indicator Line -->
+          ${isToday
+            ? html`
+                <div
+                  class="current-time-line"
+                  style="top: ${nowMins}px;"
+                  title="Current Time: ${nowHHMM}"
+                >
+                  <span class="current-time-dot"></span>
+                  <span class="current-time-label">${nowHHMM}</span>
+                </div>
+              `
+            : ''}
 
           <!-- Render Break Windows -->
           ${breakWindows.map(bw => {
@@ -161,7 +239,7 @@ export class CronoCalendarDayView extends LitElement {
 
           <!-- Render Tag Time Windows -->
           ${dayTagWindows.map(tw => {
-            const tag = this.tags.find(t => t.id === tw.tag_id) || { name: 'Tag', color: '#3B82F6' };
+            const tag = this.tags.find(t => t.id === tw.tag_id) || { id: tw.tag_id, name: 'Tag', color: '#3B82F6' };
             const bgRgba = hexToRgba(tag.color, 0.12);
             return (tw.windows || []).map(w => {
               const [sH, sM] = w.start.split(':').map(Number);
@@ -172,6 +250,7 @@ export class CronoCalendarDayView extends LitElement {
                 <div
                   class="tag-window-strip"
                   style="top: ${topPx}px; height: ${heightPx}px; background-color: ${bgRgba}; border-left: 3px dashed ${tag.color}; color: ${tag.color};"
+                  @click=${() => this._onTagClick(tag)}
                 >
                   🏷️ ${tag.name} (${w.start} - ${w.end})
                 </div>

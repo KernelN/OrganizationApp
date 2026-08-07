@@ -28,7 +28,7 @@
   --border-hover:   hsl(230, 15%, 32%);
 
   /* ── Typography ── */
-  --font-family:    'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-family:    'Outfit', system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
   --font-mono:      'JetBrains Mono', 'Fira Code', monospace;
 
   /* ── Spacing Scale ── */

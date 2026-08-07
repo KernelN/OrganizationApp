@@ -11,6 +11,11 @@ export const sharedStyles = css`
     box-sizing: border-box;
   }
 
+  a {
+    text-decoration: none;
+    color: inherit;
+  }
+
   /* Form Controls */
   .crono-input, .crono-select, .crono-textarea {
     width: 100%;
@@ -27,6 +32,20 @@ export const sharedStyles = css`
     outline: none;
     border-color: var(--accent);
     box-shadow: 0 0 0 2px var(--accent-glow);
+  }
+
+  .crono-input-num-sm {
+    width: 65px !important;
+    text-align: center;
+    padding: var(--space-xs) var(--space-sm);
+  }
+
+  .unit-pair {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    color: var(--text-secondary);
   }
 
   .crono-textarea {

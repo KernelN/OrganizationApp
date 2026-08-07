@@ -22,12 +22,12 @@ export class CronoCalendarEventBlock extends LitElement {
         border-radius: var(--radius-sm);
         padding: 4px 8px;
         display: flex;
-        flex-direction: column;
-        justify-content: space-between;
+        align-items: center;
         font-size: 12px;
         cursor: pointer;
         transition: transform var(--transition-fast), box-shadow var(--transition-fast);
         box-sizing: border-box;
+        overflow: hidden;
       }
       .block:hover {
         transform: scale(1.01);
@@ -36,10 +36,20 @@ export class CronoCalendarEventBlock extends LitElement {
       .header {
         display: flex;
         align-items: center;
-        justify-content: space-between;
-        gap: 4px;
+        justify-content: flex-start;
+        gap: 6px;
         font-weight: 600;
         line-height: 1.2;
+        width: 100%;
+        overflow: hidden;
+      }
+      .title-with-icon {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        overflow: hidden;
+        white-space: nowrap;
+        flex-shrink: 1;
       }
       .title {
         white-space: nowrap;
@@ -51,11 +61,14 @@ export class CronoCalendarEventBlock extends LitElement {
         align-items: center;
         gap: 2px;
         font-size: 12px;
+        flex-shrink: 0;
       }
       .time {
         font-family: var(--font-mono);
         font-size: 11px;
         opacity: 0.85;
+        white-space: nowrap;
+        flex-shrink: 0;
       }
 
       /* Alert Border & Pulsing */
@@ -64,7 +77,6 @@ export class CronoCalendarEventBlock extends LitElement {
       }
       .alert-red-border {
         border-left: 4px solid var(--alert-red) !important;
-        animation: pulse-red-alert 2s infinite;
       }
     `
   ];
@@ -112,14 +124,16 @@ export class CronoCalendarEventBlock extends LitElement {
         @click=${this._onClick}
       >
         <div class="header">
-          <span class="title">${this.task.title}</span>
-          <span class="icons">
-            ${isLocked ? '🔒' : '🤖'}
-            ${alertLevel === 'orange' ? '⚠' : ''}
-            ${alertLevel === 'red' ? '🔴' : ''}
-          </span>
+          <div class="title-with-icon">
+            <span class="icons">
+              ${isLocked ? '🔒' : '🤖'}
+              ${alertLevel === 'orange' ? '⚠' : ''}
+              ${alertLevel === 'red' ? '🔴' : ''}
+            </span>
+            <span class="title">${this.task.title}</span>
+          </div>
+          <span class="time">(${startHHMM} - ${endHHMM})</span>
         </div>
-        <div class="time">${startHHMM} - ${endHHMM}</div>
       </div>
     `;
   }
