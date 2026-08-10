@@ -15,7 +15,7 @@ const DAYS_MAP = [
 ];
 
 /**
- * <crono-tag-form> — Create and edit form for tags.
+ * <crono-tag-form> — Create and edit form for tags with auto-computed time budget.
  */
 export class CronoTagForm extends LitElement {
   static styles = [
@@ -23,16 +23,23 @@ export class CronoTagForm extends LitElement {
     css`
       :host {
         display: block;
+        width: 100%;
+        box-sizing: border-box;
       }
       form {
         display: flex;
         flex-direction: column;
         gap: var(--space-md);
+        width: 100%;
+        box-sizing: border-box;
       }
       .form-group {
         display: flex;
         flex-direction: column;
         gap: var(--space-xs);
+        width: 100%;
+        box-sizing: border-box;
+        min-width: 0;
       }
       label {
         font-size: 12px;
@@ -44,19 +51,25 @@ export class CronoTagForm extends LitElement {
       .row {
         display: flex;
         gap: var(--space-md);
+        flex-wrap: wrap;
+        width: 100%;
+        box-sizing: border-box;
       }
       .row > * {
-        flex: 1;
+        flex: 1 1 200px;
+        min-width: 0;
       }
       .radio-group {
         display: flex;
         gap: var(--space-md);
+        flex-wrap: wrap;
       }
       .radio-option {
         display: flex;
         align-items: center;
         gap: var(--space-xs);
         font-size: 13px;
+        cursor: pointer;
       }
       .chip-group {
         display: flex;
@@ -70,10 +83,21 @@ export class CronoTagForm extends LitElement {
         border: 1px solid var(--border);
         font-size: 12px;
         cursor: pointer;
+        transition: background var(--transition-fast), border-color var(--transition-fast);
       }
       .chip.selected {
         background: var(--accent-muted);
         border-color: var(--accent);
+        color: var(--text-primary);
+        font-weight: 600;
+      }
+      .calculated-preview {
+        font-size: 12px;
+        color: var(--text-secondary);
+        background: var(--bg-tertiary);
+        padding: var(--space-xs) var(--space-sm);
+        border-radius: var(--radius-sm);
+        border-left: 3px solid var(--accent);
       }
     `
   ];
@@ -88,7 +112,6 @@ export class CronoTagForm extends LitElement {
     this.formData = {
       name: '',
       color: '#3B82F6',
-      duration_hours: null,
       deadline: '',
       start_date: '',
       needs_dedicated_timeslot: false,
@@ -106,7 +129,6 @@ export class CronoTagForm extends LitElement {
       this.formData = {
         name: this.tag.name || '',
         color: this.tag.color || '#3B82F6',
-        duration_hours: this.tag.duration_hours ?? null,
         deadline: this.tag.deadline ? this.tag.deadline.split('T')[0] : '',
         start_date: this.tag.start_date ? this.tag.start_date.split('T')[0] : '',
         needs_dedicated_timeslot: this.tag.needs_dedicated_timeslot ?? false,
@@ -138,9 +160,13 @@ export class CronoTagForm extends LitElement {
 
   _onSubmit(e) {
     e.preventDefault();
+
+    const tagTasks = appState.tasks.filter(t => Array.isArray(t.tag_ids) && t.tag_ids.includes(this.tag?.id) && t.status === 'active');
+    const autoDuration = tagTasks.reduce((sum, t) => sum + (t.duration_hours || 0), 0);
+
     const payload = {
       ...this.formData,
-      duration_hours: this.formData.duration_hours ? Number(this.formData.duration_hours) : null,
+      duration_hours: autoDuration > 0 ? autoDuration : null,
       deadline: this.formData.deadline ? new Date(this.formData.deadline).toISOString() : null,
       start_date: this.formData.start_date ? new Date(this.formData.start_date).toISOString() : null
     };
@@ -155,6 +181,9 @@ export class CronoTagForm extends LitElement {
   }
 
   render() {
+    const tagTasks = this.tag ? appState.tasks.filter(t => Array.isArray(t.tag_ids) && t.tag_ids.includes(this.tag.id) && t.status === 'active') : [];
+    const autoDuration = tagTasks.reduce((sum, t) => sum + (t.duration_hours || 0), 0);
+
     return html`
       <form @submit=${this._onSubmit}>
         <div class="form-group">
@@ -196,16 +225,13 @@ export class CronoTagForm extends LitElement {
               @input=${(e) => (this.formData.deadline = e.target.value)}
             />
           </div>
+        </div>
 
-          <div class="form-group">
-            <label>Time Budget (h)</label>
-            <input
-              type="number"
-              step="0.5"
-              class="crono-input"
-              .value=${this.formData.duration_hours || ''}
-              @input=${(e) => (this.formData.duration_hours = e.target.value)}
-            />
+        <!-- Automatic Tag Time Budget -->
+        <div class="form-group">
+          <label>Time Budget (Auto-computed from Tasks)</label>
+          <div class="calculated-preview">
+            📊 <strong>${autoDuration.toFixed(1)} hours</strong> total from <strong>${tagTasks.length}</strong> active task${tagTasks.length === 1 ? '' : 's'}
           </div>
         </div>
 

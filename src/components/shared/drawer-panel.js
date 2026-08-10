@@ -31,7 +31,7 @@ export class CronoDrawerPanel extends LitElement {
         right: 0;
         bottom: 0;
         width: 100%;
-        max-width: 440px;
+        max-width: 500px;
         background: var(--bg-secondary);
         border-left: 1px solid var(--border);
         box-shadow: var(--shadow-lg);
@@ -40,6 +40,7 @@ export class CronoDrawerPanel extends LitElement {
         flex-direction: column;
         transform: translateX(100%);
         transition: transform var(--transition-slow);
+        box-sizing: border-box;
       }
       .panel.open {
         transform: translateX(0);
@@ -67,6 +68,7 @@ export class CronoDrawerPanel extends LitElement {
         flex: 1;
         padding: var(--space-lg);
         overflow-y: auto;
+        overflow-x: hidden;
       }
 
       @media (max-width: 1023px) {

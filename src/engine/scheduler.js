@@ -3,6 +3,7 @@ import { buildDependencyGraph, topologicalSort, hasHardDependency } from './depe
 import { computeAlertLevel, computeSlack } from './alert-evaluator.js';
 import { expandManualWindows, generateAutoWindows } from './tag-window-expander.js';
 import { takeFirstN, findFirstContiguousBlock, markSlotsOccupied } from './slot-allocator.js';
+import { processRecurrence } from './recurrence-engine.js';
 
 /**
  * Core pure function scheduling engine implementing the 9 Phases of Cronograma.
@@ -41,8 +42,12 @@ export function computeSchedule(tasks = [], tags = [], dependencies = [], settin
   const alerts = [];
   const scheduledBlocks = [];
 
+  // ── Process Recurrence for the Horizon ─────────────────
+  const { instances: recurringInstances, lockedRecurringBlocks } = processRecurrence(tasks, now, horizon, ulidGen);
+
   // ── PHASE 1: Reserve Locked Blocks ─────────────────────
-  const lockedTasks = tasks.filter(t => t.status === 'active' && t.manual_schedule && t.manual_schedule.start && t.manual_schedule.end);
+  // 1a. One-off locked tasks
+  const lockedTasks = tasks.filter(t => t.status === 'active' && !t.recurrence && t.manual_schedule && t.manual_schedule.start && t.manual_schedule.end);
   for (const task of lockedTasks) {
     const startMs = new Date(task.manual_schedule.start).getTime();
     const endMs = new Date(task.manual_schedule.end).getTime();
@@ -62,10 +67,26 @@ export function computeSchedule(tasks = [], tags = [], dependencies = [], settin
       start: task.manual_schedule.start,
       end: task.manual_schedule.end,
       is_locked: true,
+      is_recurring: false,
       alert_level: 'none',
       is_split_part: false,
       split_index: 0
     });
+  }
+
+  // 1b. Recurring locked blocks
+  for (const recBlock of lockedRecurringBlocks) {
+    const startMs = new Date(recBlock.start).getTime();
+    const endMs = new Date(recBlock.end).getTime();
+
+    const overlappingSlots = allSlots.filter(s => {
+      const sStart = new Date(s.start).getTime();
+      const sEnd = new Date(s.end).getTime();
+      return sStart >= startMs && sEnd <= endMs;
+    });
+
+    markSlotsOccupied(overlappingSlots);
+    scheduledBlocks.push(recBlock);
   }
 
   // ── PHASE 2: Compute Tag Time Windows ──────────────────
@@ -93,9 +114,7 @@ export function computeSchedule(tasks = [], tags = [], dependencies = [], settin
 
     if (tag.time_window_mode === 'auto' && tag.auto_expand_config) {
       const tagTasks = tasks.filter(t => Array.isArray(t.tag_ids) && t.tag_ids.includes(tag.id) && t.status === 'active' && !t.manual_schedule);
-      const tagTaskHours = tagTasks.reduce((sum, t) => sum + (t.duration_hours || 0), 0);
-      const tagBudgetHours = typeof tag.duration_hours === 'number' && tag.duration_hours > 0 ? Number(tag.duration_hours) : 0;
-      const totalHoursNeeded = Math.max(tagTaskHours, tagBudgetHours);
+      const totalHoursNeeded = tagTasks.reduce((sum, t) => sum + (t.duration_hours || 0), 0);
 
       const assignedDays = tag.auto_expand_config.assigned_days || [0, 1, 2, 3, 4];
       const minDaily = typeof tag.auto_expand_config.minimum_daily_hours === 'number' ? tag.auto_expand_config.minimum_daily_hours : 1.0;
@@ -165,20 +184,17 @@ export function computeSchedule(tasks = [], tags = [], dependencies = [], settin
 
   // ── PHASE 4: Handle Recurring Tasks ────────────────────
   const schedulablePool = [];
+  
+  // 4a. Add standard active tasks (non-recurring, non-locked)
   for (const task of tasks) {
-    if (task.status !== 'active' || task.manual_schedule) continue;
-
-    if (task.recurrence) {
-      const instance = { ...task, parent_task_id: task.id };
-      if (task.recurrence.accumulates && task.accumulated_count > 0) {
-        const cap = task.recurrence.accumulation_cap || settings.default_accumulation_cap || 5;
-        const count = Math.min(task.accumulated_count, cap);
-        instance.duration_hours *= (1 + count);
-      }
-      schedulablePool.push(instance);
-    } else {
+    if (task.status === 'active' && !task.manual_schedule && !task.recurrence) {
       schedulablePool.push(task);
     }
+  }
+
+  // 4b. Add recurring & catch-up instances generated for the horizon
+  for (const instance of recurringInstances) {
+    schedulablePool.push(instance);
   }
 
   // ── PHASE 5: Scoring ─────────────────────────────────────
@@ -226,6 +242,8 @@ export function computeSchedule(tasks = [], tags = [], dependencies = [], settin
         if (s.tagReserved && s.tagReservedId !== primaryTag.id) return false;
         if (!s.matchingTagIds || !s.matchingTagIds.has(primaryTag.id)) return false;
         if (!task.ignore_breaks && s.is_break) return false;
+        if (Array.isArray(task.allowed_cumulative_days) && !task.allowed_cumulative_days.includes(s.dayOfWeek)) return false;
+        if (task.scheduled_occurrence && formatDateISO(s.start) !== formatDateISO(task.scheduled_occurrence)) return false;
         return true;
       });
     } else {
@@ -234,7 +252,25 @@ export function computeSchedule(tasks = [], tags = [], dependencies = [], settin
         if (s.tagReserved) return false;
         if (s.matchingTagIds && s.matchingTagIds.size > 0) return false; // Untagged tasks can NEVER be placed inside tag windows!
         if (!task.ignore_breaks && s.is_break) return false;
+        if (Array.isArray(task.allowed_cumulative_days) && !task.allowed_cumulative_days.includes(s.dayOfWeek)) return false;
+        if (task.scheduled_occurrence && formatDateISO(s.start) !== formatDateISO(task.scheduled_occurrence)) return false;
         return true;
+      });
+    }
+
+    // Fallback: If scheduled_occurrence slot was full, allow any candidate slot up to deadline
+    if (candidateSlots.length === 0 && task.scheduled_occurrence) {
+      candidateSlots = allSlots.filter(s => {
+        if (s.occupied) return false;
+        if (primaryTag && tagWindowMap[primaryTag.id]) {
+          if (s.tagReserved && s.tagReservedId !== primaryTag.id) return false;
+          if (!s.matchingTagIds || !s.matchingTagIds.has(primaryTag.id)) return false;
+        } else {
+          if (s.tagReserved) return false;
+          if (s.matchingTagIds && s.matchingTagIds.size > 0) return false;
+        }
+        if (!task.ignore_breaks && s.is_break) return false;
+        return new Date(s.end).getTime() <= new Date(task.deadline).getTime();
       });
     }
 
@@ -248,7 +284,7 @@ export function computeSchedule(tasks = [], tags = [], dependencies = [], settin
       if (!allocated) {
         allocated = takeFirstN(candidateSlots, slotsNeeded);
         alerts.push({
-          task_id: task.id,
+          task_id: task.parent_task_id || task.id,
           level: 'orange',
           message: `Task "${task.title}" could not fit contiguously; forced split as fallback.`
         });
@@ -258,7 +294,7 @@ export function computeSchedule(tasks = [], tags = [], dependencies = [], settin
     if (allocated.length < slotsNeeded) {
       const deficit = (slotsNeeded - allocated.length) * slotSizeHours;
       alerts.push({
-        task_id: task.id,
+        task_id: task.parent_task_id || task.id,
         level: 'red',
         message: `Task "${task.title}" missing ${deficit.toFixed(2)}h before deadline/horizon.`,
         deficit_hours: deficit
@@ -271,11 +307,14 @@ export function computeSchedule(tasks = [], tags = [], dependencies = [], settin
       const slot = allocated[idx];
       scheduledBlocks.push({
         id: ulidGen(),
-        task_id: task.id,
+        task_id: task.parent_task_id || task.id,
         tag_id: primaryTagId,
         start: slot.start,
         end: slot.end,
         is_locked: false,
+        is_recurring: Boolean(task.is_recurring_instance || task.parent_task_id),
+        is_catchup: Boolean(task.is_catchup_instance),
+        accumulated_index: task.accumulated_index || 0,
         alert_level: task._alert_level,
         is_split_part: allocated.length > 1,
         split_index: idx

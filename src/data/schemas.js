@@ -38,6 +38,35 @@ export function validateTask(task) {
   if (task.color && !isValidHexColor(task.color)) {
     throw new ValidationError('Invalid task color hex format.');
   }
+  if (task.manual_schedule) {
+    if (!task.manual_schedule.start || !task.manual_schedule.end) {
+      throw new ValidationError('Manual schedule requires start and end timestamps.');
+    }
+  }
+  if (task.recurrence) {
+    const validTypes = ['hourly', 'daily', 'weekly', 'monthly', 'custom'];
+    if (!validTypes.includes(task.recurrence.type)) {
+      throw new ValidationError(`Recurrence type must be one of: ${validTypes.join(', ')}`);
+    }
+    if (task.recurrence.interval && (typeof task.recurrence.interval !== 'number' || task.recurrence.interval <= 0)) {
+      throw new ValidationError('Recurrence interval must be a positive number.');
+    }
+    if (task.recurrence.max_repeats !== undefined && task.recurrence.max_repeats !== null) {
+      if (typeof task.recurrence.max_repeats !== 'number' || task.recurrence.max_repeats <= 0) {
+        throw new ValidationError('Recurrence max_repeats must be a positive integer.');
+      }
+    }
+    if (task.recurrence.iterations_completed !== undefined && task.recurrence.iterations_completed !== null) {
+      if (typeof task.recurrence.iterations_completed !== 'number' || task.recurrence.iterations_completed < 0) {
+        throw new ValidationError('Recurrence iterations_completed must be a non-negative integer.');
+      }
+    }
+  }
+  if (task.accumulated_count !== undefined && task.accumulated_count !== null) {
+    if (typeof task.accumulated_count !== 'number' || task.accumulated_count < 0) {
+      throw new ValidationError('Accumulated count must be a non-negative integer.');
+    }
+  }
 }
 
 /**

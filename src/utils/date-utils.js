@@ -192,3 +192,151 @@ export function generateTimeSlots(now, horizon, workWindows = {}, breakWindows =
 
   return slots;
 }
+
+/**
+ * Returns the date of the Nth weekday in a given month (0-indexed month, 0=Mon..6=Sun).
+ * If nth is 5 or -1, returns the last occurrence of that weekday in the month.
+ * @param {number} year 
+ * @param {number} month - 0-indexed (0=Jan..11=Dec)
+ * @param {number} nth - 1..4, or 5 / -1 for last
+ * @param {number} dayOfWeek - 0=Mon..6=Sun
+ * @returns {Date}
+ */
+export function getNthWeekdayOfMonth(year, month, nth, dayOfWeek) {
+  const matchingDates = [];
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+
+  for (let day = 1; day <= daysInMonth; day++) {
+    const d = new Date(year, month, day);
+    if (getDayOfWeekIndex(d) === dayOfWeek) {
+      matchingDates.push(d);
+    }
+  }
+
+  if (matchingDates.length === 0) {
+    return new Date(year, month, 1);
+  }
+
+  if (nth === -1 || nth > matchingDates.length) {
+    return matchingDates[matchingDates.length - 1];
+  }
+
+  return matchingDates[nth - 1];
+}
+
+/**
+ * Calculates the next occurrence timestamp given a reference date and recurrence rule.
+ * @param {Date|string} currentDate 
+ * @param {Object} rule 
+ * @returns {Date}
+ */
+export function advanceRecurrenceOccurrence(currentDate, rule) {
+  if (!rule) return new Date(currentDate);
+  const curr = new Date(currentDate);
+  const interval = Math.max(1, rule.interval || 1);
+
+  switch (rule.type) {
+    case 'hourly': {
+      return new Date(curr.getTime() + (interval * 60 * 60 * 1000));
+    }
+
+    case 'daily': {
+      const next = new Date(curr);
+      next.setDate(next.getDate() + interval);
+      return next;
+    }
+
+    case 'weekly': {
+      const days = Array.isArray(rule.days_of_week) && rule.days_of_week.length > 0
+        ? [...rule.days_of_week].sort((a, b) => a - b)
+        : [getDayOfWeekIndex(curr)];
+
+      const currentDayIdx = getDayOfWeekIndex(curr);
+      // Look for a day later in the same week
+      const nextDayThisWeek = days.find(d => d > currentDayIdx);
+
+      if (nextDayThisWeek !== undefined) {
+        const diffDays = nextDayThisWeek - currentDayIdx;
+        const next = new Date(curr);
+        next.setDate(next.getDate() + diffDays);
+        return next;
+      } else {
+        // Jump interval weeks and pick the first matching day
+        const daysUntilNextWeek = (7 - currentDayIdx) + ((interval - 1) * 7) + days[0];
+        const next = new Date(curr);
+        next.setDate(next.getDate() + daysUntilNextWeek);
+        return next;
+      }
+    }
+
+    case 'monthly': {
+      const targetYear = curr.getFullYear();
+      const targetMonth = curr.getMonth() + interval;
+      const targetDate = new Date(targetYear, targetMonth, 1, curr.getHours(), curr.getMinutes(), curr.getSeconds());
+
+      if (rule.monthly_mode === 'nth_weekday' && rule.nth_weekday) {
+        const nth = rule.nth_weekday.nth || 1;
+        const dayOfWeek = rule.nth_weekday.day_of_week ?? 0;
+        const resultDate = getNthWeekdayOfMonth(targetDate.getFullYear(), targetDate.getMonth(), nth, dayOfWeek);
+        resultDate.setHours(curr.getHours(), curr.getMinutes(), curr.getSeconds(), 0);
+        return resultDate;
+      } else {
+        // Day of month (e.g. 15th)
+        const targetDay = rule.day_of_month || curr.getDate();
+        const maxDays = new Date(targetDate.getFullYear(), targetDate.getMonth() + 1, 0).getDate();
+        const clampedDay = Math.min(targetDay, maxDays);
+        targetDate.setDate(clampedDay);
+        return targetDate;
+      }
+    }
+
+    default: {
+      const next = new Date(curr);
+      next.setDate(next.getDate() + interval);
+      return next;
+    }
+  }
+}
+
+/**
+ * Checks for missed occurrences for a recurring task and computes new state.
+ * @param {Object} task 
+ * @param {Date|string} now 
+ * @returns {{ missedCount: number, newNextOccurrence: string, newAccumulatedCount: number }}
+ */
+export function checkMissedOccurrences(task, now) {
+  if (!task.recurrence || task.status !== 'active') {
+    return {
+      missedCount: 0,
+      newNextOccurrence: task.recurrence?.next_occurrence || null,
+      newAccumulatedCount: task.accumulated_count || 0
+    };
+  }
+
+  const nowMs = new Date(now).getTime();
+  const rule = task.recurrence;
+  let nextOccurrence = rule.next_occurrence ? new Date(rule.next_occurrence) : new Date(task.created_at || now);
+
+  let missedCount = 0;
+  while (nextOccurrence.getTime() <= nowMs) {
+    missedCount++;
+    nextOccurrence = advanceRecurrenceOccurrence(nextOccurrence, rule);
+  }
+
+  let newAccumulatedCount = task.accumulated_count || 0;
+  if (missedCount > 0) {
+    if (rule.accumulates) {
+      const cap = rule.accumulation_cap || 5;
+      newAccumulatedCount = Math.min(newAccumulatedCount + missedCount, cap);
+    } else {
+      newAccumulatedCount = 0;
+    }
+  }
+
+  return {
+    missedCount,
+    newNextOccurrence: nextOccurrence.toISOString(),
+    newAccumulatedCount
+  };
+}
+
