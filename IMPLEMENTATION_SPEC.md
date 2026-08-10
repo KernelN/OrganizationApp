@@ -203,12 +203,25 @@ sequenceDiagram
       "type": ["object", "null"],
       "default": null,
       "properties": {
-        "type":           { "type": "string", "enum": ["daily", "weekly", "biweekly", "monthly", "yearly", "custom"] },
-        "interval":       { "type": "integer", "minimum": 1, "default": 1, "description": "Every N units of type (e.g., every 2 weeks)" },
-        "days_of_week":   { "type": "array", "items": { "type": "integer", "minimum": 0, "maximum": 6 }, "description": "0=Mon, 6=Sun. Used when type is 'weekly', 'biweekly', or 'custom'" },
-        "accumulates":    { "type": "boolean", "default": false },
-        "accumulation_cap": { "type": "integer", "minimum": 1, "default": 5, "description": "Max missed instances to accumulate" },
-        "next_occurrence": { "type": "string", "format": "date-time", "description": "When the next instance should be generated" }
+        "type":                 { "type": "string", "enum": ["hourly", "daily", "weekly", "biweekly", "monthly", "yearly", "custom"] },
+        "interval":             { "type": "integer", "minimum": 1, "default": 1, "description": "Every N units of type" },
+        "days_of_week":         { "type": "array", "items": { "type": "integer", "minimum": 0, "maximum": 6 }, "description": "0=Mon, 6=Sun" },
+        "monthly_mode":         { "type": "string", "enum": ["day_of_month", "nth_weekday"], "default": "day_of_month" },
+        "day_of_month":         { "type": "integer", "minimum": 1, "maximum": 31 },
+        "nth_weekday":          {
+          "type": "object",
+          "properties": {
+            "nth":              { "type": "integer", "enum": [1, 2, 3, 4, -1] },
+            "day_of_week":      { "type": "integer", "minimum": 0, "maximum": 6 }
+          }
+        },
+        "max_repeats":          { "type": ["integer", "null"], "minimum": 1, "default": null, "description": "Optional repeat limit" },
+        "iterations_completed": { "type": "integer", "default": 0 },
+        "accumulates":          { "type": "boolean", "default": true },
+        "accumulation_cap":     { "type": "integer", "minimum": 1, "default": 5, "description": "Max missed instances to accumulate" },
+        "cumulative_days":      { "type": "array", "items": { "type": "integer", "minimum": 0, "maximum": 6 }, "description": "Allowed days for make-up/catch-up sessions" },
+        "next_occurrence":      { "type": "string", "format": "date-time", "description": "Readonly, computed next instance start" },
+        "last_occurrence":      { "type": ["string", "null"], "format": "date-time", "default": null }
       },
       "required": ["type"]
     },
@@ -216,7 +229,7 @@ sequenceDiagram
     "manual_schedule":    {
       "type": ["object", "null"],
       "default": null,
-      "description": "If set, this task is 'locked' at this time. Cronograma treats it as a fixed block.",
+      "description": "If set, this task is 'locked' at this time (manual start time with auto duration-derived end time).",
       "properties": {
         "start":          { "type": "string", "format": "date-time" },
         "end":            { "type": "string", "format": "date-time" }
@@ -246,7 +259,7 @@ sequenceDiagram
     "id":                     { "type": "string", "description": "ULID" },
     "name":                   { "type": "string", "minLength": 1, "maxLength": 100 },
     "color":                  { "type": "string", "pattern": "^#[0-9A-Fa-f]{6}$" },
-    "duration_hours":         { "type": ["number", "null"], "minimum": 0, "default": null, "description": "Total time budget for this Tag in hours (null = no budget)" },
+    "duration_hours":         { "type": ["number", "null"], "minimum": 0, "default": null, "description": "Auto-computed time budget from assigned active tasks" },
     "deadline":               { "type": ["string", "null"], "format": "date-time", "default": null },
     "start_date":             { "type": ["string", "null"], "format": "date-time", "default": null },
 
@@ -806,50 +819,71 @@ FUNCTION generateAutoWindows(assignedDays, requiredDailyHours, workWindows, star
   RETURN result
 ```
 
-### 3.6 Recurring Task Instance Generation
+### 3.6 Recurring Task Instance Generation & Accumulation
 
 ```
-FUNCTION generateRecurringInstances(task, now, horizon):
+FUNCTION processRecurrence(tasks, now, horizon):
   instances = []
-  rule = task.recurrence
-  nextOccurrence = rule.next_occurrence ?? task.created_at
-  
-  WHILE nextOccurrence <= horizon:
-    IF nextOccurrence < now:
-      // Past occurrence
-      IF rule.accumulates:
-        // Count as missed (will be accumulated on parent)
-        missedCount++
-      // Else: discard
-    ELSE:
-      // Future occurrence — create instance
-      instance = clone(task)
-      instance.id = generateULID()
-      instance.parent_task_id = task.id
-      instance.deadline = nextOccurrence  // Or nextOccurrence + original slack
-      instance.recurrence = null  // Instances are not recurring themselves
-      instances.push(instance)
-    
-    nextOccurrence = advanceByRule(nextOccurrence, rule)
-  
-  // Apply accumulation cap
-  IF rule.accumulates:
-    missedCount = min(missedCount, rule.accumulation_cap)
-    // Add accumulated duration to the NEXT instance (or create a catch-up instance)
-    IF instances.length > 0:
-      instances[0].duration_hours *= (1 + missedCount)
-      instances[0].accumulated_count = missedCount
-  
-  RETURN instances
+  lockedRecurringBlocks = []
 
-FUNCTION advanceByRule(date, rule):
+  FOR task IN tasks WHERE task.recurrence != null AND task.status == "active":
+    rule = task.recurrence
+    maxRepeats = rule.max_repeats ?? Infinity
+    completed = rule.iterations_completed ?? 0
+    remaining = max(0, maxRepeats - completed)
+    IF remaining <= 0: CONTINUE
+
+    occurrence = rule.next_occurrence ?? task.created_at
+    WHILE occurrence < now:
+      occurrence = advanceRecurrenceOccurrence(occurrence, rule)
+
+    generatedCount = 0
+    WHILE occurrence <= horizon AND generatedCount < remaining:
+      generatedCount++
+      IF task.manual_schedule != null:
+        // Locked recurring task: map time-of-day onto occurrence day
+        lockBlock = createLockedRecurringBlock(task, occurrence)
+        lockedRecurringBlocks.push(lockBlock)
+      ELSE:
+        instance = clone(task)
+        instance.id = generateULID()
+        instance.parent_task_id = task.id
+        instance.deadline = occurrence.toISOString()
+        instance.recurrence = null
+        instance.is_recurring_instance = true
+        instance.scheduled_occurrence = occurrence.toISOString()
+        instances.push(instance)
+
+      occurrence = advanceRecurrenceOccurrence(occurrence, rule)
+
+    // Generate catch-up instances for accumulated backlog
+    IF rule.accumulates AND task.accumulated_count > 0:
+      allowedDays = rule.cumulative_days ?? rule.days_of_week ?? [0, 1, 2, 3, 4]
+      catchupLimit = min(task.accumulated_count, remaining)
+      FOR i FROM 1 TO catchupLimit:
+        catchup = clone(task)
+        catchup.id = generateULID()
+        catchup.parent_task_id = task.id
+        catchup.title = `${task.title} (Catch-up ${i}/${task.accumulated_count})`
+        catchup.is_catchup_instance = true
+        catchup.accumulated_index = i
+        catchup.allowed_cumulative_days = allowedDays
+        catchup.recurrence = null
+        catchup.deadline = horizon
+        instances.push(catchup)
+
+  RETURN { instances, lockedRecurringBlocks }
+
+FUNCTION advanceRecurrenceOccurrence(date, rule):
   SWITCH rule.type:
+    "hourly":   RETURN date + (rule.interval hours)
     "daily":    RETURN date + (rule.interval days)
     "weekly":   RETURN nextMatchingDayOfWeek(date, rule.days_of_week, rule.interval weeks)
-    "biweekly": RETURN nextMatchingDayOfWeek(date, rule.days_of_week, 2 weeks)
-    "monthly":  RETURN date + (rule.interval months), same day-of-month
-    "yearly":   RETURN date + (rule.interval years)
-    "custom":   RETURN date + (rule.interval days), filtered by rule.days_of_week
+    "monthly":
+      IF rule.monthly_mode == "nth_weekday":
+        RETURN getNthWeekdayOfMonth(targetYear, targetMonth, rule.nth_weekday.nth, rule.nth_weekday.day_of_week)
+      ELSE:
+        RETURN date + (rule.interval months), same day-of-month (clamped)
 ```
 
 ### 3.7 Worker Communication Protocol
