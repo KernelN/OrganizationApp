@@ -301,48 +301,59 @@ export class CronoCalendarWeekView extends LitElement {
               `)}
 
               <!-- Render Tag Window Containers with Nested Tasks -->
-              ${dayTagWindows.map(tw => {
-                const tag = this.tags.find(t => t.id === tw.tag_id) || { id: tw.tag_id, name: 'Tag', color: '#3B82F6' };
-                const bgRgba = hexToRgba(tag.color, 0.08);
-
-                // Find blocks associated with this tag
-                const tagBlocks = dayBlocks.filter(b => {
-                  if (b.tag_id === tag.id) return true;
-                  const task = this.tasks.find(t => t.id === b.task_id);
-                  return task && Array.isArray(task.tag_ids) && task.tag_ids.includes(tag.id);
+              ${(() => {
+                const sortedDayTagWindows = [...dayTagWindows].sort((a, b) => {
+                  const depthA = a.tag_id ? (this.tags.find(t => t.id === a.tag_id)?.parent_tag_id ? 2 : 1) : 1;
+                  const depthB = b.tag_id ? (this.tags.find(t => t.id === b.tag_id)?.parent_tag_id ? 2 : 1) : 1;
+                  // Render subtags first so their specific blocks are claimed before parent
+                  return depthB - depthA;
                 });
 
-                tagBlocks.forEach(b => renderedBlockIds.add(b.id));
+                return sortedDayTagWindows.map(tw => {
+                  const tag = this.tags.find(t => t.id === tw.tag_id) || { id: tw.tag_id, name: 'Tag', color: '#3B82F6' };
+                  const isSubtag = Boolean(tag.parent_tag_id);
+                  const bgRgba = hexToRgba(tag.color, isSubtag ? 0.14 : 0.08);
 
-                return (tw.windows || []).map(w => html`
-                  <div
-                    class="tag-window-box"
-                    style="background: ${bgRgba}; border-color: ${tag.color};"
-                    @click=${() => this._onTagClick(tag)}
-                  >
-                    <div class="tag-window-header" style="color: ${tag.color};">
-                      <span>🏷️ ${tag.name}</span>
-                      <span>${w.start} - ${w.end}</span>
+                  // Find blocks associated specifically with this tag
+                  const tagBlocks = dayBlocks.filter(b => {
+                    if (renderedBlockIds.has(b.id)) return false;
+                    if (b.tag_id === tag.id) return true;
+                    const task = this.tasks.find(t => t.id === b.task_id);
+                    return task && Array.isArray(task.tag_ids) && task.tag_ids.includes(tag.id);
+                  });
+
+                  tagBlocks.forEach(b => renderedBlockIds.add(b.id));
+
+                  return (tw.windows || []).map(w => html`
+                    <div
+                      class="tag-window-box"
+                      style="background: ${bgRgba}; border-color: ${tag.color}; ${isSubtag ? 'margin-left: 8px;' : ''}"
+                      @click=${() => this._onTagClick(tag)}
+                    >
+                      <div class="tag-window-header" style="color: ${tag.color};">
+                        <span>🏷️ ${isSubtag ? '↳ ' : ''}${tag.name}</span>
+                        <span>${w.start} - ${w.end}</span>
+                      </div>
+                      <div class="tag-window-body">
+                        ${tagBlocks.map(block => {
+                          const task = this.tasks.find(t => t.id === block.task_id) || { title: 'Task', color: tag.color };
+                          return html`
+                            <div
+                              class="block-item"
+                              @click=${(e) => e.stopPropagation()}
+                            >
+                              <crono-calendar-event-block
+                                .block=${block}
+                                .task=${task}
+                              ></crono-calendar-event-block>
+                            </div>
+                          `;
+                        })}
+                      </div>
                     </div>
-                    <div class="tag-window-body">
-                      ${tagBlocks.map(block => {
-                        const task = this.tasks.find(t => t.id === block.task_id) || { title: 'Task', color: tag.color };
-                        return html`
-                          <div
-                            class="block-item"
-                            @click=${(e) => e.stopPropagation()}
-                          >
-                            <crono-calendar-event-block
-                              .block=${block}
-                              .task=${task}
-                            ></crono-calendar-event-block>
-                          </div>
-                        `;
-                      })}
-                    </div>
-                  </div>
-                `);
-              })}
+                  `);
+                });
+              })()}
 
               <!-- Render Untagged Tasks Container -->
               ${(() => {

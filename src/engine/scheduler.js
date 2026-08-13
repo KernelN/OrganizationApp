@@ -89,30 +89,61 @@ export function computeSchedule(tasks = [], tags = [], dependencies = [], settin
     scheduledBlocks.push(recBlock);
   }
 
-  // ── PHASE 2: Compute Tag Time Windows ──────────────────
+  // ── PHASE 2: Compute Tag Time Windows (Hierarchical) ──
   const tagWindowMap = {};
   const tagWindowsComputedList = [];
-  const dayCursors = {};
+  const globalDayCursors = {};
+  const subtagDayCursors = {};
 
-  // First pass: process manual windows to seed dayCursors
-  for (const tag of tags) {
+  // Pure helper to compute tag hierarchy depth
+  const getDepth = (tagId, visited = new Set()) => {
+    if (!tagId || visited.has(tagId)) return 1;
+    visited.add(tagId);
+    const tg = tags.find(t => t.id === tagId);
+    if (!tg || !tg.parent_tag_id) return 1;
+    return 1 + getDepth(tg.parent_tag_id, visited);
+  };
+
+  // Pure helper to get ancestor tag IDs
+  const getAncestorIds = (tagId) => {
+    const list = [];
+    let curr = tags.find(t => t.id === tagId);
+    const visited = new Set();
+    while (curr && curr.parent_tag_id && !visited.has(curr.id)) {
+      visited.add(curr.id);
+      const p = tags.find(t => t.id === curr.parent_tag_id);
+      if (p) {
+        list.push(p.id);
+        curr = p;
+      } else {
+        break;
+      }
+    }
+    return list;
+  };
+
+  // Sort tags by hierarchy depth (root tags first, then children, grandchildren, etc.)
+  const sortedTags = [...tags].sort((a, b) => getDepth(a.id) - getDepth(b.id));
+
+  // Process all tags in topological hierarchy order
+  for (const tag of sortedTags) {
+    if (!tag.time_window_mode || tag.time_window_mode === 'none') continue;
+
+    const parentWindows = tag.parent_tag_id ? tagWindowMap[tag.parent_tag_id] : null;
+    const activeDayCursors = tag.parent_tag_id
+      ? (subtagDayCursors[tag.parent_tag_id] = subtagDayCursors[tag.parent_tag_id] || {})
+      : globalDayCursors;
+
     if (tag.time_window_mode === 'manual') {
-      tagWindowMap[tag.id] = expandManualWindows(tag.time_windows || {}, now, horizon);
+      tagWindowMap[tag.id] = expandManualWindows(tag.time_windows || {}, now, horizon, parentWindows);
       for (const [dateStr, winList] of Object.entries(tagWindowMap[tag.id])) {
         for (const w of winList) {
-          if (!dayCursors[dateStr] || w.end > dayCursors[dateStr]) {
-            dayCursors[dateStr] = w.end;
+          if (!activeDayCursors[dateStr] || w.end > activeDayCursors[dateStr]) {
+            activeDayCursors[dateStr] = w.end;
           }
         }
       }
-    }
-  }
-
-  // Second pass: process auto-expanding windows dynamically stacked
-  for (const tag of tags) {
-    if (!tag.time_window_mode || tag.time_window_mode === 'none' || tag.time_window_mode === 'manual') continue;
-
-    if (tag.time_window_mode === 'auto' && tag.auto_expand_config) {
+    } else if (tag.time_window_mode === 'auto' && tag.auto_expand_config) {
       const tagTasks = tasks.filter(t => Array.isArray(t.tag_ids) && t.tag_ids.includes(tag.id) && t.status === 'active' && !t.manual_schedule);
       const totalHoursNeeded = tagTasks.reduce((sum, t) => sum + (t.duration_hours || 0), 0);
 
@@ -135,14 +166,25 @@ export function computeSchedule(tasks = [], tags = [], dependencies = [], settin
         ? Math.max(minDaily, totalHoursNeeded / activeDaysCount)
         : minDaily;
 
-      tagWindowMap[tag.id] = generateAutoWindows(assignedDays, requiredDailyHours, settings.work_windows || {}, settings.break_windows || {}, startDate, endDate, dayCursors);
+      tagWindowMap[tag.id] = generateAutoWindows(
+        assignedDays,
+        requiredDailyHours,
+        settings.work_windows || {},
+        settings.break_windows || {},
+        startDate,
+        endDate,
+        activeDayCursors,
+        parentWindows
+      );
     }
   }
 
   for (const tag of tags) {
     if (tagWindowMap[tag.id]) {
       for (const [date, windows] of Object.entries(tagWindowMap[tag.id])) {
-        tagWindowsComputedList.push({ tag_id: tag.id, date, windows });
+        if (Array.isArray(windows) && windows.length > 0) {
+          tagWindowsComputedList.push({ tag_id: tag.id, date, windows });
+        }
       }
     }
   }
@@ -150,6 +192,7 @@ export function computeSchedule(tasks = [], tags = [], dependencies = [], settin
   // ── PHASE 3: Tag Reservation ────────────────────────────
   for (const tag of tags) {
     if (tagWindowMap[tag.id]) {
+      const ancestorIds = getAncestorIds(tag.id);
       for (const [dateStr, windowList] of Object.entries(tagWindowMap[tag.id])) {
         for (const w of windowList) {
           const wStartMins = parseHHMMToMins(w.start);
@@ -174,6 +217,10 @@ export function computeSchedule(tasks = [], tags = [], dependencies = [], settin
                 }
                 if (!slot.matchingTagIds) slot.matchingTagIds = new Set();
                 slot.matchingTagIds.add(tag.id);
+                // Also mark ancestor tag IDs so slots are compatible with parent tasks
+                for (const aId of ancestorIds) {
+                  slot.matchingTagIds.add(aId);
+                }
               }
             }
           }
@@ -233,14 +280,21 @@ export function computeSchedule(tasks = [], tags = [], dependencies = [], settin
   // ── PHASE 8: Allocate Slots (Greedy Fill) ──────────────
   for (const task of priorityQueue) {
     let candidateSlots = [];
-    const primaryTagId = Array.isArray(task.tag_ids) && task.tag_ids[0] ? task.tag_ids[0] : null;
-    const primaryTag = primaryTagId ? tags.find(tg => tg.id === primaryTagId) : null;
+    const taskTags = Array.isArray(task.tag_ids) ? task.tag_ids.map(id => tags.find(tg => tg.id === id)).filter(Boolean) : [];
+    const windowedTaskTags = taskTags.filter(tg => tg.time_window_mode && tg.time_window_mode !== 'none');
 
-    if (primaryTag && tagWindowMap[primaryTag.id]) {
+    // Pick the innermost (deepest) windowed tag in the chain
+    let targetTag = null;
+    if (windowedTaskTags.length > 0) {
+      targetTag = windowedTaskTags.sort((a, b) => getDepth(b.id) - getDepth(a.id))[0];
+    }
+
+    if (targetTag && tagWindowMap[targetTag.id]) {
+      const targetAncestorIds = getAncestorIds(targetTag.id);
       candidateSlots = allSlots.filter(s => {
         if (s.occupied) return false;
-        if (s.tagReserved && s.tagReservedId !== primaryTag.id) return false;
-        if (!s.matchingTagIds || !s.matchingTagIds.has(primaryTag.id)) return false;
+        if (s.tagReserved && s.tagReservedId !== targetTag.id && !targetAncestorIds.includes(s.tagReservedId)) return false;
+        if (!s.matchingTagIds || !s.matchingTagIds.has(targetTag.id)) return false;
         if (!task.ignore_breaks && s.is_break) return false;
         if (Array.isArray(task.allowed_cumulative_days) && !task.allowed_cumulative_days.includes(s.dayOfWeek)) return false;
         if (task.scheduled_occurrence && formatDateISO(s.start) !== formatDateISO(task.scheduled_occurrence)) return false;
@@ -262,9 +316,10 @@ export function computeSchedule(tasks = [], tags = [], dependencies = [], settin
     if (candidateSlots.length === 0 && task.scheduled_occurrence) {
       candidateSlots = allSlots.filter(s => {
         if (s.occupied) return false;
-        if (primaryTag && tagWindowMap[primaryTag.id]) {
-          if (s.tagReserved && s.tagReservedId !== primaryTag.id) return false;
-          if (!s.matchingTagIds || !s.matchingTagIds.has(primaryTag.id)) return false;
+        if (targetTag && tagWindowMap[targetTag.id]) {
+          const targetAncestorIds = getAncestorIds(targetTag.id);
+          if (s.tagReserved && s.tagReservedId !== targetTag.id && !targetAncestorIds.includes(s.tagReservedId)) return false;
+          if (!s.matchingTagIds || !s.matchingTagIds.has(targetTag.id)) return false;
         } else {
           if (s.tagReserved) return false;
           if (s.matchingTagIds && s.matchingTagIds.size > 0) return false;
@@ -308,7 +363,7 @@ export function computeSchedule(tasks = [], tags = [], dependencies = [], settin
       scheduledBlocks.push({
         id: ulidGen(),
         task_id: task.parent_task_id || task.id,
-        tag_id: primaryTagId,
+        tag_id: targetTag ? targetTag.id : (Array.isArray(task.tag_ids) && task.tag_ids[0] ? task.tag_ids[0] : null),
         start: slot.start,
         end: slot.end,
         is_locked: false,

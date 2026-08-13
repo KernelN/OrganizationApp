@@ -1,9 +1,11 @@
 import { LitElement, html, css } from 'lit';
 import { sharedStyles } from '../../styles/shared-styles.js';
-import { validateTaskTagConstraints } from '../../utils/validators.js';
+import { validateTaskTagConstraints, getTagDescendants, getTagDepth } from '../../utils/validators.js';
+import { parseMarkdown } from '../../utils/markdown.js';
 import { appState } from '../../state/app-state.js';
 import { addHours, formatHHMM } from '../../utils/date-utils.js';
 import '../shared/color-picker.js';
+import '../shared/time-picker-24h.js';
 
 const DAYS_MAP = [
   { idx: 0, label: 'Mon' },
@@ -102,12 +104,66 @@ export class CronoTaskForm extends LitElement {
         font-size: 12px;
         cursor: pointer;
         transition: background var(--transition-fast), border-color var(--transition-fast);
+        display: inline-flex;
+        align-items: center;
       }
       .chip.selected {
         background: var(--accent-muted);
         border-color: var(--accent);
         color: var(--text-primary);
         font-weight: 600;
+      }
+      .tab-toggle {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        background: var(--bg-tertiary);
+        padding: 2px;
+        border-radius: var(--radius-sm);
+        border: 1px solid var(--border);
+      }
+      .tab-btn {
+        background: transparent;
+        border: none;
+        padding: 2px 8px;
+        font-size: 11px;
+        font-weight: 600;
+        color: var(--text-secondary);
+        border-radius: var(--radius-sm);
+        cursor: pointer;
+        transition: background var(--transition-fast), color var(--transition-fast);
+      }
+      .tab-btn.active {
+        background: var(--bg-surface);
+        color: var(--text-primary);
+        box-shadow: var(--shadow-sm);
+      }
+      .description-preview {
+        min-height: 80px;
+        max-height: 240px;
+        overflow-y: auto;
+        padding: var(--space-sm) var(--space-md);
+        background: var(--bg-surface);
+        border: 1px solid var(--border);
+        border-radius: var(--radius-md);
+      }
+      .tag-hierarchy-tree {
+        display: flex;
+        flex-direction: column;
+        gap: var(--space-xs);
+      }
+      .tag-row-branch {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+      }
+      .subtag-children-container {
+        display: flex;
+        flex-wrap: wrap;
+        gap: var(--space-xs);
+        margin-left: 18px;
+        padding-left: var(--space-sm);
+        border-left: 2px dashed var(--border);
       }
       .section-divider {
         border-top: 1px solid var(--border);
@@ -178,6 +234,7 @@ export class CronoTaskForm extends LitElement {
     this.task = null;
     this.tags = [];
     this.allTasks = [];
+    this.descriptionTab = 'edit';
 
     this._resetForm();
   }
@@ -322,6 +379,11 @@ export class CronoTaskForm extends LitElement {
     const ids = new Set(this.formData.tag_ids);
     if (ids.has(tagId)) {
       ids.delete(tagId);
+      // Cascade uncheck all descendant subtags
+      const descendants = getTagDescendants(tagId, this.tags);
+      for (const d of descendants) {
+        ids.delete(d.id);
+      }
     } else {
       ids.add(tagId);
     }
@@ -333,6 +395,33 @@ export class CronoTaskForm extends LitElement {
     } catch (err) {
       alert(err.message);
     }
+  }
+
+  _renderTagBranch(tag) {
+    const isSelected = this.formData.tag_ids.includes(tag.id);
+    const children = this.tags.filter(t => t.parent_tag_id === tag.id);
+    const depth = getTagDepth(tag.id, this.tags);
+
+    return html`
+      <div class="tag-row-branch">
+        <button
+          type="button"
+          class="chip ${isSelected ? 'selected' : ''}"
+          @click=${() => this._toggleTag(tag.id)}
+        >
+          <span style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background-color: ${tag.color}; margin-right: 5px;"></span>
+          <span>${tag.name}</span>
+          ${tag.time_window_mode !== 'none' ? html`<span style="margin-left: 4px;">⏰</span>` : ''}
+          ${children.length > 0 ? html`<span style="opacity: 0.6; font-size: 10px; margin-left: 4px;">(${children.length} sub)</span>` : ''}
+        </button>
+
+        ${isSelected && children.length > 0 ? html`
+          <div class="subtag-children-container">
+            ${children.map(child => this._renderTagBranch(child))}
+          </div>
+        ` : ''}
+      </div>
+    `;
   }
 
   _toggleDayOfWeek(dayIdx) {
@@ -466,12 +555,35 @@ export class CronoTaskForm extends LitElement {
         </div>
 
         <div class="form-group">
-          <label>Description</label>
-          <textarea
-            class="crono-textarea"
-            .value=${this.formData.description}
-            @input=${(e) => (this.formData.description = e.target.value)}
-          ></textarea>
+          <div style="display: flex; justify-content: space-between; align-items: center;">
+            <label>Description</label>
+            <div class="tab-toggle">
+              <button
+                type="button"
+                class="tab-btn ${this.descriptionTab === 'edit' ? 'active' : ''}"
+                @click=${() => { this.descriptionTab = 'edit'; this.requestUpdate(); }}
+              >✏️ Edit</button>
+              <button
+                type="button"
+                class="tab-btn ${this.descriptionTab === 'preview' ? 'active' : ''}"
+                @click=${() => { this.descriptionTab = 'preview'; this.requestUpdate(); }}
+              >👁️ Preview</button>
+            </div>
+          </div>
+          ${this.descriptionTab === 'edit' ? html`
+            <textarea
+              class="crono-textarea"
+              .value=${this.formData.description}
+              @input=${(e) => (this.formData.description = e.target.value)}
+              placeholder="Supports markdown: **bold**, *italic*, - list, - [ ] task, \`code\`, # heading, tables..."
+            ></textarea>
+          ` : html`
+            <div class="description-preview markdown-body">
+              ${this.formData.description && this.formData.description.trim()
+                ? html`<div .innerHTML=${parseMarkdown(this.formData.description)}></div>`
+                : html`<span style="color: var(--text-secondary); font-style: italic;">No description provided.</span>`}
+            </div>
+          `}
         </div>
 
         <!-- Duration & Priority -->
@@ -545,14 +657,11 @@ export class CronoTaskForm extends LitElement {
             <label>🔒 Manual Locked Start Time</label>
             ${this.isRecurring ? html`
               <div class="form-group">
-                <label>Daily/Weekly Starting Time</label>
-                <input
-                  type="time"
-                  class="crono-input"
+                <label>Daily/Weekly Starting Time (24h)</label>
+                <crono-time-picker-24h
                   .value=${this.manualTimeOfDayStart}
-                  @input=${e => { this.manualTimeOfDayStart = e.target.value; this.requestUpdate(); }}
-                  required
-                />
+                  @crono-time-change=${e => { this.manualTimeOfDayStart = e.detail.value; this.requestUpdate(); }}
+                ></crono-time-picker-24h>
               </div>
             ` : html`
               <div class="form-group">
@@ -761,19 +870,15 @@ export class CronoTaskForm extends LitElement {
         </div>
 
         <div class="form-group">
-          <label>Tags (Max 1 time-windowed tag)</label>
-          <div class="chip-group">
-            ${this.tags.map(
-              (tg) => html`
-                <button
-                  type="button"
-                  class="chip ${this.formData.tag_ids.includes(tg.id) ? 'selected' : ''}"
-                  @click=${() => this._toggleTag(tg.id)}
-                >
-                  ${tg.name} ${tg.time_window_mode !== 'none' ? '⏰' : ''}
-                </button>
-              `
-            )}
+          <label>Tags & Subtags</label>
+          <div class="tag-hierarchy-tree">
+            ${this.tags.filter(t => !t.parent_tag_id).length === 0 ? html`
+              <span style="font-size: 12px; color: var(--text-secondary); font-style: italic;">No tags created yet.</span>
+            ` : html`
+              <div class="chip-group">
+                ${this.tags.filter(t => !t.parent_tag_id).map(rootTag => this._renderTagBranch(rootTag))}
+              </div>
+            `}
           </div>
         </div>
 

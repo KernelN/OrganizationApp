@@ -52,13 +52,45 @@ export function getAvailableWorkChunks(workWindows = [], breakWindows = []) {
 }
 
 /**
+ * Intersects two sets of time window arrays [{start, end}].
+ * @param {Array<{start: string, end: string}>} windowsA 
+ * @param {Array<{start: string, end: string}>} windowsB 
+ * @returns {Array<{start: string, end: string}>}
+ */
+export function intersectTimeWindows(windowsA = [], windowsB = []) {
+  if (!Array.isArray(windowsA) || windowsA.length === 0 || !Array.isArray(windowsB) || windowsB.length === 0) return [];
+  const result = [];
+  for (const a of windowsA) {
+    const aStartMins = parseHHMMToMins(a.start);
+    const aEndMins = parseHHMMToMins(a.end);
+
+    for (const b of windowsB) {
+      const bStartMins = parseHHMMToMins(b.start);
+      const bEndMins = parseHHMMToMins(b.end);
+
+      const maxStart = Math.max(aStartMins, bStartMins);
+      const minEnd = Math.min(aEndMins, bEndMins);
+
+      if (maxStart < minEnd) {
+        result.push({
+          start: formatMinsToHHMM(maxStart),
+          end: formatMinsToHHMM(minEnd)
+        });
+      }
+    }
+  }
+  return result;
+}
+
+/**
  * Expands fixed manual windows per day of week across date range [now, horizon].
  * @param {Object} timeWindows - { monday: [{start, end}], ... }
  * @param {Date|string} now 
  * @param {Date|string} horizon 
+ * @param {Object} [parentWindowsMap] - Optional map date_string -> [{start, end}] to clamp against
  * @returns {Object} Map date_string -> [{start, end}]
  */
-export function expandManualWindows(timeWindows = {}, now, horizon) {
+export function expandManualWindows(timeWindows = {}, now, horizon, parentWindowsMap = null) {
   const result = {};
   const curr = new Date(now);
   const end = new Date(horizon);
@@ -67,7 +99,14 @@ export function expandManualWindows(timeWindows = {}, now, horizon) {
     const dayName = getDayName(curr);
     const dateStr = formatDateISO(curr);
     if (Array.isArray(timeWindows[dayName]) && timeWindows[dayName].length > 0) {
-      result[dateStr] = timeWindows[dayName].map(w => ({ ...w }));
+      let windows = timeWindows[dayName].map(w => ({ ...w }));
+      if (parentWindowsMap) {
+        const pWins = parentWindowsMap[dateStr] || [];
+        windows = intersectTimeWindows(windows, pWins);
+      }
+      if (windows.length > 0) {
+        result[dateStr] = windows;
+      }
     }
     curr.setDate(curr.getDate() + 1);
   }
@@ -75,7 +114,7 @@ export function expandManualWindows(timeWindows = {}, now, horizon) {
 }
 
 /**
- * Generates auto-expanding tag windows clamped to global work window and respecting break windows.
+ * Generates auto-expanding tag windows clamped to parent window or global work windows.
  * @param {Array<number>} assignedDays - 0=Mon, 6=Sun
  * @param {number} requiredDailyHours 
  * @param {Object} workWindows 
@@ -83,9 +122,10 @@ export function expandManualWindows(timeWindows = {}, now, horizon) {
  * @param {Date|string} startDate 
  * @param {Date|string} endDate 
  * @param {Object} dayCursors - Map of dateStr -> current start HH:MM string for dynamic stacking
+ * @param {Object} [parentWindowsMap] - Optional map dateStr -> [{start, end}] to carve from
  * @returns {Object} Map date_string -> [{start, end}]
  */
-export function generateAutoWindows(assignedDays = [], requiredDailyHours = 1, workWindows = {}, breakWindows = {}, startDate, endDate, dayCursors = {}) {
+export function generateAutoWindows(assignedDays = [], requiredDailyHours = 1, workWindows = {}, breakWindows = {}, startDate, endDate, dayCursors = {}, parentWindowsMap = null) {
   const result = {};
   const curr = new Date(startDate);
   const end = new Date(endDate);
@@ -94,19 +134,25 @@ export function generateAutoWindows(assignedDays = [], requiredDailyHours = 1, w
     const dayIdx = getDayOfWeekIndex(curr);
     if (assignedDays.includes(dayIdx)) {
       const dayName = getDayName(curr);
-      const rawWorkWindows = workWindows[dayName] || [];
-      const rawBreakWindows = breakWindows[dayName] || [];
+      const dateStr = formatDateISO(curr);
 
-      const availableChunks = getAvailableWorkChunks(rawWorkWindows, rawBreakWindows);
+      let availableChunks = [];
+      const isSubtag = Boolean(parentWindowsMap);
+      if (isSubtag && parentWindowsMap[dateStr]) {
+        availableChunks = parentWindowsMap[dateStr].map(w => ({ ...w }));
+      } else if (!isSubtag) {
+        const rawWorkWindows = workWindows[dayName] || [];
+        const rawBreakWindows = breakWindows[dayName] || [];
+        availableChunks = getAvailableWorkChunks(rawWorkWindows, rawBreakWindows);
+      }
 
       if (availableChunks.length > 0) {
-        const dateStr = formatDateISO(curr);
         const allocatedWindows = [];
         let remaining = requiredDailyHours;
 
         for (const chunk of availableChunks) {
           let effectiveStart = chunk.start;
-          if (dayCursors[dateStr] && dayCursors[dateStr] > effectiveStart) {
+          if (dayCursors[dateStr] && dayCursors[dateStr] > effectiveStart && dayCursors[dateStr] < chunk.end) {
             effectiveStart = dayCursors[dateStr];
           }
 
@@ -139,3 +185,5 @@ export function generateAutoWindows(assignedDays = [], requiredDailyHours = 1, w
 
   return result;
 }
+
+

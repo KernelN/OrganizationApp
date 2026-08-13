@@ -72,8 +72,9 @@ export function validateTask(task) {
 /**
  * Validates a tag object before saving to DAL.
  * @param {Object} tag 
+ * @param {Array<Object>} [allTags]
  */
-export function validateTag(tag) {
+export function validateTag(tag, allTags = []) {
   if (!tag.name || typeof tag.name !== 'string' || tag.name.trim() === '') {
     throw new ValidationError('Tag name is required.');
   }
@@ -82,6 +83,9 @@ export function validateTag(tag) {
   }
   if (tag.time_window_mode && !['none', 'manual', 'auto'].includes(tag.time_window_mode)) {
     throw new ValidationError('Invalid tag time_window_mode.');
+  }
+  if (tag.parent_tag_id !== undefined && tag.parent_tag_id !== null && typeof tag.parent_tag_id !== 'string') {
+    throw new ValidationError('Tag parent_tag_id must be a string or null.');
   }
 }
 
