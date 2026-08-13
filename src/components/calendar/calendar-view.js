@@ -67,6 +67,10 @@ export class CronoCalendarView extends LitElement {
       .view-container {
         flex: 1;
         overflow: hidden;
+        min-width: 0;
+        min-height: 0;
+        display: flex;
+        flex-direction: column;
       }
     `
   ];

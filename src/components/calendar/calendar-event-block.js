@@ -4,7 +4,7 @@ import { hexToRgba } from '../../utils/color-utils.js';
 import { formatHHMM } from '../../utils/date-utils.js';
 
 /**
- * <crono-calendar-event-block> — Render element for scheduled task/tag block.
+ * <crono-calendar-event-block> — Render element for scheduled task/tag block with icons for locked, auto, recurring, and catch-up states.
  */
 export class CronoCalendarEventBlock extends LitElement {
   static styles = [
@@ -63,6 +63,15 @@ export class CronoCalendarEventBlock extends LitElement {
         font-size: 12px;
         flex-shrink: 0;
       }
+      .catchup-badge {
+        font-family: var(--font-mono);
+        font-size: 10px;
+        font-weight: 700;
+        background: var(--accent);
+        color: #fff;
+        padding: 1px 4px;
+        border-radius: var(--radius-sm);
+      }
       .time {
         font-family: var(--font-mono);
         font-size: 11px;
@@ -108,6 +117,8 @@ export class CronoCalendarEventBlock extends LitElement {
     const borderLeftColor = baseColor;
 
     const isLocked = this.block.is_locked;
+    const isRecurring = this.block.is_recurring || Boolean(this.task.recurrence);
+    const isCatchup = this.block.is_catchup;
     const alertLevel = this.block.alert_level || 'none';
 
     let alertClass = '';
@@ -127,6 +138,8 @@ export class CronoCalendarEventBlock extends LitElement {
           <div class="title-with-icon">
             <span class="icons">
               ${isLocked ? '🔒' : '🤖'}
+              ${isRecurring ? '🔄' : ''}
+              ${isCatchup ? html`<span class="catchup-badge" title="Make-up Catch-up Session">⚡${this.block.accumulated_index || ''}</span>` : ''}
               ${alertLevel === 'orange' ? '⚠' : ''}
               ${alertLevel === 'red' ? '🔴' : ''}
             </span>

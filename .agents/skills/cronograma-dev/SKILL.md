@@ -236,6 +236,7 @@ The user picks ONE accent hex color. `src/utils/color-utils.js` decomposes it to
 | File | Responsibility |
 |------|---------------|
 | `scheduler.js` | Orchestrates all 9 phases. Single entry point: `computeSchedule()` |
+| `recurrence-engine.js` | Pure Phase 4 recurrence generator: future instances, catch-up backlog on cumulative days, max repeats |
 | `dependency-resolver.js` | `buildDependencyGraph()`, `topologicalSort()`, `detectCycle()` |
 | `alert-evaluator.js` | `computeAlertLevel()` — red/orange/none per task |
 | `tag-window-expander.js` | `generateAutoWindows()`, `expandManualWindows()` |
@@ -335,9 +336,16 @@ After any DAL write operation, `AppState` checks if it should trigger a schedule
 
 ### Edge Cases to Remember
 
-- **Recurring task accumulation** uses a counter on the parent, NOT separate task objects. The cap is configurable per-task (default from settings).
+- **Manual Start-Time Only**: Manual locked tasks (one-off and recurring) take only the start time; end time is computed from duration.
+- **Automatic Tag Time Budget**: Tag duration is dynamically derived from assigned active tasks, not manually edited.
+- **Recurring task accumulation** uses a counter on the parent, NOT separate task objects. The cap is configurable per-task (`accumulation_cap`).
+- **Allowed Cumulative Days**: Catch-up instances for accumulated tasks are scheduled across `cumulative_days` (configured separately from primary recurrence days).
+- **Max Repeats / Iterations**: Repeating tasks can optionally specify `max_repeats`. Capped instance generation in engine; completes the task when `iterations_completed >= max_repeats`.
+- **Readonly Next Occurrence**: Managed by recurrence engine and task completion; not user-editable.
+- **Anti-Overflow Drawer Layout**: Drawer panel is 500px on desktop with `overflow-x: hidden`, alert window placed below deadline.
 - **Non-splittable tasks** that can't fit contiguously should be **force-split as a fallback** with an alert, not silently dropped.
 - **Auto-expanding tag windows** always respect global work windows and break windows. They stack dynamically across available work chunks in list order using a stateful `dayCursors` map (`dateStr -> HH:MM`).
 - **Tags with `time_window_mode: 'none'`** are pure labels — they don't affect scheduling.
 - **Dependency cycle detection** checks the combined hard+soft graph, not just one type.
 - **History pruning** runs inside `completeTask()`, not as a separate cron/timer.
+

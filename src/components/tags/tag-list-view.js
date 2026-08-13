@@ -96,18 +96,23 @@ export class CronoTagListView extends LitElement {
 
       <div class="tag-grid">
         ${tags.map(
-          (tg) => html`
-            <div class="tag-card" @click=${() => this._openEdit(tg)}>
-              <div class="tag-header">
-                <div class="color-dot" style="background-color: ${tg.color}"></div>
-                <span>${tg.name}</span>
+          (tg) => {
+            const tagTasks = (appState.tasks || []).filter(t => Array.isArray(t.tag_ids) && t.tag_ids.includes(tg.id) && t.status === 'active');
+            const totalHours = tagTasks.reduce((sum, t) => sum + (t.duration_hours || 0), 0);
+
+            return html`
+              <div class="tag-card" @click=${() => this._openEdit(tg)}>
+                <div class="tag-header">
+                  <div class="color-dot" style="background-color: ${tg.color}"></div>
+                  <span>${tg.name}</span>
+                </div>
+                <div class="tag-meta">
+                  <span>Mode: ${tg.time_window_mode || 'none'}</span>
+                  <span> · ⏱ ${totalHours.toFixed(1)}h (${tagTasks.length} task${tagTasks.length === 1 ? '' : 's'})</span>
+                </div>
               </div>
-              <div class="tag-meta">
-                <span>Mode: ${tg.time_window_mode || 'none'}</span>
-                ${tg.duration_hours ? html`<span> · Budget: ${tg.duration_hours}h</span>` : ''}
-              </div>
-            </div>
-          `
+            `;
+          }
         )}
       </div>
 

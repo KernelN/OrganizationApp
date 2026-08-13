@@ -4,6 +4,7 @@ import { validateTask, validateTag, validateDependency } from './schemas.js';
 import { generateULID } from '../utils/ulid.js';
 import { CycleDetectedError } from '../utils/errors.js';
 import { detectCycleFromDependencies } from '../engine/dependency-resolver.js';
+import { advanceRecurrenceOccurrence } from '../utils/date-utils.js';
 
 const DB_NAME = 'cronograma_db';
 const DB_VERSION = 2;
@@ -190,7 +191,73 @@ export class IndexedDBAdapter extends DataAccessLayer {
   }
 
   async completeTask(id) {
+    const db = await this.dbPromise;
+    const existing = await db.get('tasks', id);
+    if (!existing) {
+      throw new Error(`Task with id ${id} not found`);
+    }
+
     const now = new Date().toISOString();
+
+    // 1. If accumulated count > 0, decrement counter and track iteration
+    if (existing.accumulated_count && existing.accumulated_count > 0) {
+      const nextCompleted = (existing.recurrence?.iterations_completed || 0) + 1;
+      const maxRepeats = existing.recurrence?.max_repeats;
+      const isFinished = Boolean(maxRepeats && nextCompleted >= maxRepeats && (existing.accumulated_count - 1 <= 0));
+
+      const updated = await this.updateTask(id, {
+        accumulated_count: Math.max(0, existing.accumulated_count - 1),
+        status: isFinished ? 'completed' : 'active',
+        completed_at: isFinished ? now : null,
+        recurrence: existing.recurrence ? {
+          ...existing.recurrence,
+          iterations_completed: nextCompleted
+        } : null,
+        updated_at: now
+      });
+      return updated;
+    }
+
+    // 2. If repeating task with 0 accumulated count, advance next_occurrence and update last_occurrence
+    if (existing.recurrence) {
+      const nextCompleted = (existing.recurrence.iterations_completed || 0) + 1;
+      const maxRepeats = existing.recurrence.max_repeats;
+      const isFinished = Boolean(maxRepeats && nextCompleted >= maxRepeats);
+
+      if (isFinished) {
+        const updated = await this.updateTask(id, {
+          status: 'completed',
+          completed_at: now,
+          accumulated_count: 0,
+          recurrence: {
+            ...existing.recurrence,
+            iterations_completed: nextCompleted,
+            last_occurrence: now
+          },
+          updated_at: now
+        });
+        const settings = await this.getSettings();
+        await this._enforceHistoryLimit(settings.completed_history_limit);
+        return updated;
+      }
+
+      const currentNext = existing.recurrence.next_occurrence ? new Date(existing.recurrence.next_occurrence) : new Date(now);
+      const nextDate = advanceRecurrenceOccurrence(currentNext, existing.recurrence);
+      const updated = await this.updateTask(id, {
+        status: 'active',
+        accumulated_count: 0,
+        recurrence: {
+          ...existing.recurrence,
+          iterations_completed: nextCompleted,
+          next_occurrence: nextDate.toISOString(),
+          last_occurrence: now
+        },
+        updated_at: now
+      });
+      return updated;
+    }
+
+    // 3. One-off task: mark completed
     const updated = await this.updateTask(id, {
       status: 'completed',
       completed_at: now

@@ -3,6 +3,7 @@ import { VercelSync } from '../data/vercel-sync.js';
 import { scheduleState } from './schedule-state.js';
 import { eventBus } from './event-bus.js';
 import { applyAccentColor } from '../utils/color-utils.js';
+import { checkMissedOccurrences } from '../utils/date-utils.js';
 
 class AppState {
   constructor() {
@@ -34,6 +35,25 @@ class AppState {
       this.tags = await this.dal.getTags();
       this.dependencies = await this.dal.getDependencies();
       this.timeLogs = await this.dal.getTimeLogs();
+
+      // 1b. Check missed occurrences for recurring tasks
+      const now = new Date().toISOString();
+      for (const t of this.tasks) {
+        if (t.recurrence && t.status === 'active') {
+          const { missedCount, newNextOccurrence, newAccumulatedCount } = checkMissedOccurrences(t, now);
+          if (missedCount > 0) {
+            const updated = await this.dal.updateTask(t.id, {
+              accumulated_count: newAccumulatedCount,
+              recurrence: {
+                ...t.recurrence,
+                next_occurrence: newNextOccurrence
+              }
+            });
+            const idx = this.tasks.findIndex(item => item.id === t.id);
+            if (idx !== -1) this.tasks[idx] = updated;
+          }
+        }
+      }
 
       // 2. Initialize Vercel sync config
       if (this.settings.vercel_sync) {
@@ -181,7 +201,15 @@ class AppState {
       this.triggerRecompute();
       this.debounceSync();
       this.notify();
-      eventBus.emit('toast:show', { message: 'Task completed! 🎉', type: 'success' });
+
+      if (completed.accumulated_count > 0) {
+        eventBus.emit('toast:show', { message: `Completed 1 instance (${completed.accumulated_count} accumulated remaining) ⚡`, type: 'success' });
+      } else if (completed.recurrence) {
+        const nextDate = completed.recurrence.next_occurrence ? new Date(completed.recurrence.next_occurrence).toLocaleDateString() : '';
+        eventBus.emit('toast:show', { message: `Repeating task completed! Next: ${nextDate} 🔄`, type: 'success' });
+      } else {
+        eventBus.emit('toast:show', { message: 'Task completed! 🎉', type: 'success' });
+      }
       return completed;
     } catch (err) {
       eventBus.emit('toast:show', { message: err.message, type: 'error' });
