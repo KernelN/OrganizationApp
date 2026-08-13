@@ -2,6 +2,7 @@ import { LitElement, html, css } from 'lit';
 import { sharedStyles } from '../../styles/shared-styles.js';
 import { appState } from '../../state/app-state.js';
 import { getTagDepth, getTagDescendants, validateTagHierarchy } from '../../utils/validators.js';
+import { subtractTimeWindows } from '../../engine/tag-window-expander.js';
 import '../shared/color-picker.js';
 import './tag-time-window-editor.js';
 
@@ -239,6 +240,23 @@ export class CronoTagForm extends LitElement {
       return true;
     });
   }
+  _getEffectiveParentWindows(parentTag) {
+    if (!parentTag || parentTag.time_window_mode !== 'manual') return null;
+    const allTags = appState.tags || [];
+    const currentId = this.tag?.id;
+    // Sibling subtags under the same parent
+    const siblings = allTags.filter(t => t.parent_tag_id === parentTag.id && t.id !== currentId && t.time_window_mode === 'manual');
+
+    const dayNames = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
+    const effective = {};
+
+    for (const day of dayNames) {
+      const baseWins = parentTag.time_windows?.[day] || [];
+      const siblingWins = siblings.flatMap(s => s.time_windows?.[day] || []);
+      effective[day] = subtractTimeWindows(baseWins, siblingWins);
+    }
+    return effective;
+  }
 
   render() {
     const allTags = appState.tags || [];
@@ -248,6 +266,7 @@ export class CronoTagForm extends LitElement {
     const eligibleParents = this._getEligibleParentTags();
     const parentTag = this.formData.parent_tag_id ? allTags.find(t => t.id === this.formData.parent_tag_id) : null;
     const parentDepth = parentTag ? getTagDepth(parentTag.id, allTags) : 0;
+    const effectiveParentWindows = this._getEffectiveParentWindows(parentTag);
 
     return html`
       <form @submit=${this._onSubmit}>
@@ -375,12 +394,12 @@ export class CronoTagForm extends LitElement {
                 <label>Manual Time Windows</label>
                 ${parentTag && parentTag.time_window_mode === 'manual' ? html`
                   <div class="calculated-preview" style="margin-bottom: var(--space-xs);">
-                    ℹ️ Windows are bounded inside parent (<strong>${parentTag.name}</strong>) manual hours.
+                    ℹ️ Windows are bounded inside parent (<strong>${parentTag.name}</strong>) unreserved hours.
                   </div>
                 ` : ''}
                 <crono-tag-time-window-editor
                   .timeWindows=${this.formData.time_windows}
-                  .parentWindows=${parentTag && parentTag.time_window_mode === 'manual' ? parentTag.time_windows : null}
+                  .parentWindows=${effectiveParentWindows}
                   @crono-windows-change=${e => this.formData.time_windows = e.detail.timeWindows}
                 ></crono-tag-time-window-editor>
               </div>
@@ -396,7 +415,7 @@ export class CronoTagForm extends LitElement {
                   allowedDayIndices = new Set(parentTag.auto_expand_config?.assigned_days || []);
                 } else if (parentTag.time_window_mode === 'manual') {
                   allowedDayIndices = new Set(
-                    [0, 1, 2, 3, 4, 5, 6].filter(idx => (parentTag.time_windows?.[dayNamesList[idx]] || []).length > 0)
+                    [0, 1, 2, 3, 4, 5, 6].filter(idx => (effectiveParentWindows?.[dayNamesList[idx]] || []).length > 0)
                   );
                 }
               }

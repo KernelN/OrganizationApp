@@ -1,7 +1,7 @@
 import { generateTimeSlots, formatDateISO, formatHHMM, parseHHMMToMins, diffHours, addDays, parseISOToLocalDate } from '../utils/date-utils.js';
 import { buildDependencyGraph, topologicalSort, hasHardDependency } from './dependency-resolver.js';
 import { computeAlertLevel, computeSlack } from './alert-evaluator.js';
-import { expandManualWindows, generateAutoWindows } from './tag-window-expander.js';
+import { expandManualWindows, generateAutoWindows, subtractTimeWindows } from './tag-window-expander.js';
 import { takeFirstN, findFirstContiguousBlock, markSlotsOccupied } from './slot-allocator.js';
 import { processRecurrence } from './recurrence-engine.js';
 
@@ -122,8 +122,14 @@ export function computeSchedule(tasks = [], tags = [], dependencies = [], settin
     return list;
   };
 
-  // Sort tags by hierarchy depth (root tags first, then children, grandchildren, etc.)
-  const sortedTags = [...tags].sort((a, b) => getDepth(a.id) - getDepth(b.id));
+  // Sort tags by hierarchy depth, and manual before auto within same depth
+  const sortedTags = [...tags].sort((a, b) => {
+    const depthDiff = getDepth(a.id) - getDepth(b.id);
+    if (depthDiff !== 0) return depthDiff;
+    if (a.time_window_mode === 'manual' && b.time_window_mode !== 'manual') return -1;
+    if (a.time_window_mode !== 'manual' && b.time_window_mode === 'manual') return 1;
+    return 0;
+  });
 
   // Process all tags in topological hierarchy order
   for (const tag of sortedTags) {
@@ -166,6 +172,23 @@ export function computeSchedule(tasks = [], tags = [], dependencies = [], settin
         ? Math.max(minDaily, totalHoursNeeded / activeDaysCount)
         : minDaily;
 
+      // If subtag, subtract any sibling manual windows from parent windows
+      let effectiveParent = parentWindows;
+      if (tag.parent_tag_id && parentWindows) {
+        effectiveParent = {};
+        for (const [dateStr, baseWins] of Object.entries(parentWindows)) {
+          const siblingWins = [];
+          for (const s of tags) {
+            if (s.parent_tag_id === tag.parent_tag_id && s.id !== tag.id && s.time_window_mode === 'manual') {
+              if (tagWindowMap[s.id] && tagWindowMap[s.id][dateStr]) {
+                siblingWins.push(...tagWindowMap[s.id][dateStr]);
+              }
+            }
+          }
+          effectiveParent[dateStr] = subtractTimeWindows(baseWins, siblingWins);
+        }
+      }
+
       tagWindowMap[tag.id] = generateAutoWindows(
         assignedDays,
         requiredDailyHours,
@@ -174,7 +197,7 @@ export function computeSchedule(tasks = [], tags = [], dependencies = [], settin
         startDate,
         endDate,
         activeDayCursors,
-        parentWindows
+        effectiveParent
       );
     }
   }

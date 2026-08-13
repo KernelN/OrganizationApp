@@ -83,6 +83,54 @@ export function intersectTimeWindows(windowsA = [], windowsB = []) {
 }
 
 /**
+ * Subtracts occupied time windows from base time windows.
+ * @param {Array<{start: string, end: string}>} baseWindows 
+ * @param {Array<{start: string, end: string}>} occupiedWindows 
+ * @returns {Array<{start: string, end: string}>}
+ */
+export function subtractTimeWindows(baseWindows = [], occupiedWindows = []) {
+  if (!Array.isArray(baseWindows) || baseWindows.length === 0) return [];
+  if (!Array.isArray(occupiedWindows) || occupiedWindows.length === 0) return baseWindows.map(w => ({ ...w }));
+
+  let currentChunks = baseWindows.map(w => ({
+    start: parseHHMMToMins(w.start),
+    end: parseHHMMToMins(w.end)
+  }));
+
+  for (const occ of occupiedWindows) {
+    const occStart = parseHHMMToMins(occ.start);
+    const occEnd = parseHHMMToMins(occ.end);
+    if (occStart >= occEnd) continue;
+
+    const nextChunks = [];
+    for (const chunk of currentChunks) {
+      // No overlap
+      if (occEnd <= chunk.start || occStart >= chunk.end) {
+        nextChunks.push(chunk);
+      } else {
+        // Left remainder
+        if (chunk.start < occStart) {
+          nextChunks.push({ start: chunk.start, end: occStart });
+        }
+        // Right remainder
+        if (chunk.end > occEnd) {
+          nextChunks.push({ start: occEnd, end: chunk.end });
+        }
+      }
+    }
+    currentChunks = nextChunks;
+  }
+
+  return currentChunks
+    .filter(c => c.start < c.end)
+    .sort((a, b) => a.start - b.start)
+    .map(c => ({
+      start: formatMinsToHHMM(c.start),
+      end: formatMinsToHHMM(c.end)
+    }));
+}
+
+/**
  * Expands fixed manual windows per day of week across date range [now, horizon].
  * @param {Object} timeWindows - { monday: [{start, end}], ... }
  * @param {Date|string} now 

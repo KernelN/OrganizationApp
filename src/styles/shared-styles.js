@@ -199,12 +199,37 @@ export const sharedStyles = css`
     border: none;
     color: var(--text-primary);
   }
-  .markdown-body ul, .markdown-body ol, .markdown-body .md-list {
+  .markdown-body ul.md-list {
+    list-style: none;
+    padding-left: 0;
+    margin: var(--space-xs) 0;
+  }
+  .markdown-body ul.md-list ul.md-list {
+    margin: 2px 0;
+    padding-left: 0;
+  }
+  .markdown-body ol.md-list {
     margin: var(--space-xs) 0;
     padding-left: 20px;
   }
   .markdown-body li {
     margin-bottom: 3px;
+  }
+  .markdown-body .md-bullet-track {
+    display: inline-flex;
+    align-items: center;
+    margin-right: 4px;
+    vertical-align: middle;
+  }
+  .markdown-body .md-bullet-col {
+    display: inline-block;
+    width: 16px;
+    text-align: center;
+    color: var(--text-primary);
+    font-size: 14px;
+    line-height: 1;
+    user-select: none;
+    flex-shrink: 0;
   }
   .markdown-body .md-task-list {
     list-style: none;

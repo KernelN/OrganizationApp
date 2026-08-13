@@ -53,7 +53,20 @@ export class CronoTimeRangeInput extends LitElement {
       const e = parseHHMMToMins(inv.end);
       return mins >= s && mins <= e;
     });
-    return found || this.allowedIntervals[0];
+    if (found) return found;
+
+    let closest = this.allowedIntervals[0];
+    let minDiff = Infinity;
+    for (const inv of this.allowedIntervals) {
+      const s = parseHHMMToMins(inv.start);
+      const e = parseHHMMToMins(inv.end);
+      const diff = Math.min(Math.abs(mins - s), Math.abs(mins - e));
+      if (diff < minDiff) {
+        minDiff = diff;
+        closest = inv;
+      }
+    }
+    return closest;
   }
 
   _onChange() {

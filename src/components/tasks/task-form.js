@@ -290,10 +290,12 @@ export class CronoTaskForm extends LitElement {
   }
 
   willUpdate(changedProperties) {
-    if (changedProperties.has('task') && this.task) {
-      const dur = this.task.duration_hours || 1;
-      this.durationHours = Math.floor(dur);
-      this.durationMins = Math.round((dur - this.durationHours) * 60);
+    if (changedProperties.has('task')) {
+      if (this.task) {
+        this.descriptionTab = 'preview';
+        const dur = this.task.duration_hours || 1;
+        this.durationHours = Math.floor(dur);
+        this.durationMins = Math.round((dur - this.durationHours) * 60);
 
       const alertTot = this.task.alert_window_hours ?? 24;
       this.alertDays = Math.floor(alertTot / 24);
@@ -344,6 +346,7 @@ export class CronoTaskForm extends LitElement {
       this.logMins = 0;
     }
   }
+}
 
   _getFormattedNextOccurrence() {
     const raw = this.task?.recurrence?.next_occurrence || this.recNextOccurrence || new Date().toISOString();

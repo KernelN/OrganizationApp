@@ -6,8 +6,9 @@
  * - Code blocks (```lang ... ```)
  * - Inline code (`code`)
  * - Bold (** or __), Italic (* or _), Strikethrough (~~)
- * - Unordered lists (- or *) and ordered lists (1.)
- * - Checkboxes (- [ ] and - [x])
+ * - Unordered lists with nested subpoints (* * * or - - or indentation)
+ * - Ordered lists (1. 2.)
+ * - Checkboxes (- [ ] and - [x] or * * [x])
  * - Links ([text](url)) with secure target/rel
  * - Horizontal rules (---)
  * - Tables (| a | b |)
@@ -67,10 +68,6 @@ function parseInline(text) {
   // Strikethrough
   out = out.replace(/~~([^~]+)~~/g, '<del>$1</del>');
 
-  // Checkboxes
-  out = out.replace(/^\[ \]\s*/, '<input type="checkbox" disabled class="md-checkbox" /> ');
-  out = out.replace(/^\[[xX]\]\s*/, '<input type="checkbox" checked disabled class="md-checkbox" /> ');
-
   // Links [text](url)
   out = out.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_, label, url) => {
     return `<a href="${sanitizeUrl(url)}" target="_blank" rel="noopener noreferrer" class="md-link">${label}</a>`;
@@ -92,17 +89,19 @@ export function parseMarkdown(md) {
   let inCodeBlock = false;
   let codeBlockLang = '';
   let codeBlockLines = [];
-  let inList = false;
-  let listType = ''; // 'ul' | 'ol'
+  const listStack = []; // Array of { type: 'ul'|'ol', level: number }
   let inTable = false;
   let tableHeaderParsed = false;
 
-  const closeList = () => {
-    if (inList) {
-      htmlChunks.push(`</${listType}>`);
-      inList = false;
-      listType = '';
+  const closeListToLevel = (targetLevel) => {
+    while (listStack.length > targetLevel) {
+      const closed = listStack.pop();
+      htmlChunks.push(`</${closed.type}>`);
     }
+  };
+
+  const closeAllLists = () => {
+    closeListToLevel(0);
   };
 
   const closeTable = () => {
@@ -119,16 +118,14 @@ export function parseMarkdown(md) {
 
     // Code blocks ```
     if (trimmed.startsWith('```')) {
-      closeList();
+      closeAllLists();
       closeTable();
       if (inCodeBlock) {
-        // End code block
         htmlChunks.push(`<pre class="md-code-block"><code class="language-${codeBlockLang}">${escapeHtml(codeBlockLines.join('\n'))}</code></pre>`);
         inCodeBlock = false;
         codeBlockLines = [];
         codeBlockLang = '';
       } else {
-        // Start code block
         inCodeBlock = true;
         codeBlockLang = escapeHtml(trimmed.slice(3).trim());
         codeBlockLines = [];
@@ -143,17 +140,15 @@ export function parseMarkdown(md) {
 
     // Blank lines close lists and tables
     if (!trimmed) {
-      closeList();
+      closeAllLists();
       closeTable();
       continue;
     }
 
     // Tables (| col | col |)
     if (trimmed.startsWith('|') && trimmed.endsWith('|')) {
-      closeList();
+      closeAllLists();
       const cells = trimmed.slice(1, -1).split('|').map(c => c.trim());
-
-      // Is separator line (e.g. |---|---|)
       const isSeparator = cells.every(c => /^:?-+:?$/.test(c));
 
       if (isSeparator && inTable && !tableHeaderParsed) {
@@ -182,9 +177,9 @@ export function parseMarkdown(md) {
       closeTable();
     }
 
-    // Horizontal rule (--- or *** or ___)
+    // Horizontal rule (--- or *** or ___ with nothing else)
     if (/^(---|___|\*\*\*)$/.test(trimmed)) {
-      closeList();
+      closeAllLists();
       htmlChunks.push('<hr class="md-hr" />');
       continue;
     }
@@ -192,7 +187,7 @@ export function parseMarkdown(md) {
     // Headers (# to ######)
     const headerMatch = trimmed.match(/^(#{1,6})\s+(.*)$/);
     if (headerMatch) {
-      closeList();
+      closeAllLists();
       const level = headerMatch[1].length;
       const content = parseInline(escapeHtml(headerMatch[2]));
       htmlChunks.push(`<h${level} class="md-h${level}">${content}</h${level}>`);
@@ -201,62 +196,98 @@ export function parseMarkdown(md) {
 
     // Blockquote (> text)
     if (trimmed.startsWith('>')) {
-      closeList();
+      closeAllLists();
       const quoteText = parseInline(escapeHtml(trimmed.replace(/^>\s*/, '')));
       htmlChunks.push(`<blockquote class="md-blockquote">${quoteText}</blockquote>`);
       continue;
     }
 
-    // Checkbox list items (- [ ] / - [x])
-    const checkMatch = trimmed.match(/^[-*]\s+\[([ xX])\]\s+(.*)$/);
-    if (checkMatch) {
-      if (!inList || listType !== 'ul') {
-        closeList();
-        inList = true;
+    // ── List Item Detection (Handles * * *, - -, + +, and space indentation) ──
+    let isListItem = false;
+    let listType = 'ul';
+    let listDepth = 1;
+    let itemContent = '';
+    let bulletPrefix = '';
+
+    // Check concatenated markers (e.g. * * *, - - -, + + +)
+    const concatAsteriskMatch = trimmed.match(/^(\*(?:\s*\*)+)\s+(.*)$/);
+    const concatDashMatch = trimmed.match(/^(-(?:\s*-)+)\s+(.*)$/);
+    const concatPlusMatch = trimmed.match(/^(\+(?:\s*\+)+)\s+(.*)$/);
+
+    if (concatAsteriskMatch) {
+      isListItem = true;
+      listType = 'ul';
+      listDepth = (concatAsteriskMatch[1].match(/\*/g) || []).length;
+      itemContent = concatAsteriskMatch[2];
+      bulletPrefix = listDepth > 1 ? Array(listDepth).fill('•').join(' ') + ' ' : '';
+    } else if (concatDashMatch) {
+      isListItem = true;
+      listType = 'ul';
+      listDepth = (concatDashMatch[1].match(/-/g) || []).length;
+      itemContent = concatDashMatch[2];
+      bulletPrefix = listDepth > 1 ? Array(listDepth).fill('-').join(' ') + ' ' : '';
+    } else if (concatPlusMatch) {
+      isListItem = true;
+      listType = 'ul';
+      listDepth = (concatPlusMatch[1].match(/\+/g) || []).length;
+      itemContent = concatPlusMatch[2];
+      bulletPrefix = listDepth > 1 ? Array(listDepth).fill('+').join(' ') + ' ' : '';
+    } else {
+      // Check standard single bullet with indentation (- / * / +)
+      const indentBulletMatch = rawLine.match(/^(\s*)([-*+])\s+(.*)$/);
+      if (indentBulletMatch) {
+        isListItem = true;
         listType = 'ul';
-        htmlChunks.push('<ul class="md-list md-task-list">');
+        listDepth = 1 + Math.floor(indentBulletMatch[1].length / 2);
+        itemContent = indentBulletMatch[3];
+      } else {
+        // Check ordered list with indentation (1. 2.)
+        const indentOrderedMatch = rawLine.match(/^(\s*)(\d+)\.\s+(.*)$/);
+        if (indentOrderedMatch) {
+          isListItem = true;
+          listType = 'ol';
+          listDepth = 1 + Math.floor(indentOrderedMatch[1].length / 2);
+          itemContent = indentOrderedMatch[3];
+        }
       }
-      const isChecked = checkMatch[1].toLowerCase() === 'x';
-      const itemText = parseInline(escapeHtml(checkMatch[2]));
-      htmlChunks.push(`<li class="md-task-item"><input type="checkbox" disabled ${isChecked ? 'checked' : ''} class="md-checkbox" /> <span>${itemText}</span></li>`);
-      continue;
     }
 
-    // Unordered lists (- or *)
-    const ulMatch = trimmed.match(/^[-*]\s+(.*)$/);
-    if (ulMatch) {
-      if (!inList || listType !== 'ul') {
-        closeList();
-        inList = true;
-        listType = 'ul';
-        htmlChunks.push('<ul class="md-list">');
+    if (isListItem) {
+      // Adjust list stack to target depth
+      if (listStack.length < listDepth) {
+        while (listStack.length < listDepth) {
+          htmlChunks.push(`<${listType} class="md-list">`);
+          listStack.push({ type: listType, level: listStack.length + 1 });
+        }
+      } else if (listStack.length > listDepth) {
+        closeListToLevel(listDepth);
       }
-      const itemText = parseInline(escapeHtml(ulMatch[1]));
-      htmlChunks.push(`<li>${itemText}</li>`);
-      continue;
-    }
 
-    // Ordered lists (1. 2.)
-    const olMatch = trimmed.match(/^(\d+)\.\s+(.*)$/);
-    if (olMatch) {
-      if (!inList || listType !== 'ol') {
-        closeList();
-        inList = true;
-        listType = 'ol';
-        htmlChunks.push('<ol class="md-list">');
+      // Check for task checkbox: [ ] or [x]
+      const checkMatch = itemContent.match(/^\[([ xX])\]\s+(.*)$/);
+      if (checkMatch) {
+        const isChecked = checkMatch[1].toLowerCase() === 'x';
+        const parsedText = parseInline(escapeHtml(checkMatch[2]));
+        const taskTrack = listDepth > 1 ? `<span class="md-bullet-track">${'<span class="md-bullet-col">•</span>'.repeat(listDepth - 1)}</span>` : '';
+        htmlChunks.push(`<li class="md-task-item">${taskTrack}<input type="checkbox" disabled ${isChecked ? 'checked' : ''} class="md-checkbox" /> <span>${parsedText}</span></li>`);
+      } else if (listType === 'ul') {
+        const trackHtml = `<span class="md-bullet-track">${'<span class="md-bullet-col">•</span>'.repeat(listDepth)}</span>`;
+        const parsedText = parseInline(escapeHtml(itemContent));
+        htmlChunks.push(`<li>${trackHtml}<span>${parsedText}</span></li>`);
+      } else {
+        const parsedText = parseInline(escapeHtml(itemContent));
+        htmlChunks.push(`<li>${parsedText}</li>`);
       }
-      const itemText = parseInline(escapeHtml(olMatch[2]));
-      htmlChunks.push(`<li>${itemText}</li>`);
       continue;
     }
 
     // Standard paragraph
-    closeList();
+    closeAllLists();
     const paragraphText = parseInline(escapeHtml(trimmed));
     htmlChunks.push(`<p class="md-p">${paragraphText}</p>`);
   }
 
-  closeList();
+  closeAllLists();
   closeTable();
 
   return htmlChunks.join('\n');

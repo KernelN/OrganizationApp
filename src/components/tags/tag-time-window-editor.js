@@ -54,10 +54,10 @@ export class CronoTagTimeWindowEditor extends LitElement {
 
   _addWindow(day) {
     const current = Array.isArray(this.timeWindows[day]) ? [...this.timeWindows[day]] : [];
-    // If parent has a window for this day, default to parent's start/end
     const pWindows = this.parentWindows && Array.isArray(this.parentWindows[day]) ? this.parentWindows[day] : [];
-    const defaultStart = pWindows.length > 0 ? pWindows[0].start : '09:00';
-    const defaultEnd = pWindows.length > 0 ? pWindows[0].end : '12:00';
+    const nextPWin = pWindows.length > 0 ? (pWindows[current.length % pWindows.length] || pWindows[0]) : null;
+    const defaultStart = nextPWin ? nextPWin.start : '09:00';
+    const defaultEnd = nextPWin ? nextPWin.end : '12:00';
     current.push({ start: defaultStart, end: defaultEnd });
     this.timeWindows = { ...this.timeWindows, [day]: current };
     this._dispatchChange();
@@ -129,8 +129,6 @@ export class CronoTagTimeWindowEditor extends LitElement {
                     <crono-time-range-input
                       .start=${w.start}
                       .end=${w.end}
-                      .min=${minBound}
-                      .max=${maxBound}
                       .allowedIntervals=${pWindows.length > 0 ? pWindows : null}
                       @crono-time-range-change=${e => this._updateRange(day, idx, e.detail)}
                     ></crono-time-range-input>
