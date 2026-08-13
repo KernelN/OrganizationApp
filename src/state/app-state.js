@@ -252,16 +252,12 @@ class AppState {
   async deleteTag(id) {
     try {
       await this.dal.deleteTag(id);
-      this.tags = this.tags.filter(t => t.id !== id);
-      this.tasks.forEach(t => {
-        if (Array.isArray(t.tag_ids)) {
-          t.tag_ids = t.tag_ids.filter(tId => tId !== id);
-        }
-      });
+      this.tags = await this.dal.getTags();
+      this.tasks = await this.dal.getTasks();
       this.triggerRecompute();
       this.debounceSync();
       this.notify();
-      eventBus.emit('toast:show', { message: 'Tag deleted.', type: 'info' });
+      eventBus.emit('toast:show', { message: 'Tag and any child subtags deleted.', type: 'info' });
     } catch (err) {
       eventBus.emit('toast:show', { message: err.message, type: 'error' });
       throw err;

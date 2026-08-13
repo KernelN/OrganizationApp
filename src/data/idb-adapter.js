@@ -302,6 +302,7 @@ export class IndexedDBAdapter extends DataAccessLayer {
       id: generateULID(),
       name: tagData.name,
       color: tagData.color,
+      parent_tag_id: tagData.parent_tag_id || null,
       duration_hours: tagData.duration_hours ?? null,
       deadline: tagData.deadline || null,
       start_date: tagData.start_date || null,
@@ -339,15 +340,34 @@ export class IndexedDBAdapter extends DataAccessLayer {
 
   async deleteTag(id) {
     const db = await this.dbPromise;
-    const tx = db.transaction(['tags', 'tasks'], 'readwrite');
-    await tx.objectStore('tags').delete(id);
+    const allTags = await db.getAll('tags');
+    
+    // Find all descendant tag IDs to cascade delete
+    const tagsToDelete = new Set([id]);
+    const queue = [id];
+    while (queue.length > 0) {
+      const currentId = queue.shift();
+      const children = allTags.filter(t => t.parent_tag_id === currentId);
+      for (const child of children) {
+        if (!tagsToDelete.has(child.id)) {
+          tagsToDelete.add(child.id);
+          queue.push(child.id);
+        }
+      }
+    }
 
-    // Remove tag_id from associated tasks
+    const tx = db.transaction(['tags', 'tasks'], 'readwrite');
+    const tagStore = tx.objectStore('tags');
+    for (const tagId of tagsToDelete) {
+      await tagStore.delete(tagId);
+    }
+
+    // Remove deleted tag_ids from associated tasks
     const taskStore = tx.objectStore('tasks');
     const allTasks = await taskStore.getAll();
     for (const task of allTasks) {
-      if (Array.isArray(task.tag_ids) && task.tag_ids.includes(id)) {
-        task.tag_ids = task.tag_ids.filter(tId => tId !== id);
+      if (Array.isArray(task.tag_ids) && task.tag_ids.some(tId => tagsToDelete.has(tId))) {
+        task.tag_ids = task.tag_ids.filter(tId => !tagsToDelete.has(tId));
         await taskStore.put(task);
       }
     }

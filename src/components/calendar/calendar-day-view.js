@@ -3,6 +3,7 @@ import { sharedStyles } from '../../styles/shared-styles.js';
 import { getDayName, formatDateISO } from '../../utils/date-utils.js';
 import { hexToRgba } from '../../utils/color-utils.js';
 import { mergeContiguousBlocks } from '../../utils/block-utils.js';
+import { getTagDepth } from '../../utils/validators.js';
 import './calendar-event-block.js';
 
 /**
@@ -237,26 +238,39 @@ export class CronoCalendarDayView extends LitElement {
             `;
           })}
 
-          <!-- Render Tag Time Windows -->
-          ${dayTagWindows.map(tw => {
-            const tag = this.tags.find(t => t.id === tw.tag_id) || { id: tw.tag_id, name: 'Tag', color: '#3B82F6' };
-            const bgRgba = hexToRgba(tag.color, 0.12);
-            return (tw.windows || []).map(w => {
-              const [sH, sM] = w.start.split(':').map(Number);
-              const [eH, eM] = w.end.split(':').map(Number);
-              const topPx = (sH * 60 + sM);
-              const heightPx = Math.max(16, ((eH * 60 + eM) - (sH * 60 + sM)));
-              return html`
-                <div
-                  class="tag-window-strip"
-                  style="top: ${topPx}px; height: ${heightPx}px; background-color: ${bgRgba}; border-left: 3px dashed ${tag.color}; color: ${tag.color};"
-                  @click=${() => this._onTagClick(tag)}
-                >
-                  🏷️ ${tag.name} (${w.start} - ${w.end})
-                </div>
-              `;
+          <!-- Render Tag Time Windows (Layered, Inset & Vertically Offset by Depth) -->
+          ${(() => {
+            const sortedDayTagWindows = [...dayTagWindows].sort((a, b) => {
+              const depthA = getTagDepth(a.tag_id, this.tags);
+              const depthB = getTagDepth(b.tag_id, this.tags);
+              return depthA - depthB;
             });
-          })}
+
+            return sortedDayTagWindows.map(tw => {
+              const tag = this.tags.find(t => t.id === tw.tag_id) || { id: tw.tag_id, name: 'Tag', color: '#3B82F6' };
+              const depth = getTagDepth(tag.id, this.tags);
+              const isSubtag = depth > 1;
+              const insetLeft = (depth - 1) * 16;
+              const paddingTop = (depth - 1) * 20 + 4;
+              const bgRgba = hexToRgba(tag.color, isSubtag ? 0.22 : 0.12);
+
+              return (tw.windows || []).map(w => {
+                const [sH, sM] = w.start.split(':').map(Number);
+                const [eH, eM] = w.end.split(':').map(Number);
+                const topPx = (sH * 60 + sM);
+                const heightPx = Math.max(16, ((eH * 60 + eM) - (sH * 60 + sM)));
+                return html`
+                  <div
+                    class="tag-window-strip"
+                    style="top: ${topPx}px; height: ${heightPx}px; left: ${insetLeft}px; right: 0; z-index: ${depth}; padding-top: ${paddingTop}px; background-color: ${bgRgba}; border-left: 3px ${isSubtag ? 'solid' : 'dashed'} ${tag.color}; color: ${tag.color};"
+                    @click=${() => this._onTagClick(tag)}
+                  >
+                    🏷️ ${isSubtag ? '↳ ' : ''}${tag.name} (${w.start} - ${w.end})
+                  </div>
+                `;
+              });
+            });
+          })()}
 
           <!-- Render Scheduled Event Blocks -->
           ${dayBlocks.map(block => {
@@ -272,7 +286,7 @@ export class CronoCalendarDayView extends LitElement {
             return html`
               <div
                 class="block-wrapper"
-                style="top: ${topPx}px; height: ${heightPx}px;"
+                style="top: ${topPx}px; height: ${heightPx}px; z-index: 10;"
               >
                 <crono-calendar-event-block
                   .block=${block}

@@ -146,10 +146,14 @@ export class CronoTaskCard extends LitElement {
     if (!this.task) return html``;
 
     const color = this.task.color || '#6366F1';
-    const tagNames = (this.task.tag_ids || [])
-      .map(id => (this.tags.find(t => t.id === id) || {}).name)
-      .filter(Boolean)
-      .join(', ');
+    const taskTags = (this.task.tag_ids || [])
+      .map(id => this.tags.find(t => t.id === id))
+      .filter(Boolean);
+
+    // Group into hierarchical paths or list
+    const tagDisplay = taskTags.length > 0
+      ? taskTags.sort((a, b) => (a.parent_tag_id ? 1 : 0) - (b.parent_tag_id ? 1 : 0)).map(t => t.name).join(' > ')
+      : '';
 
     const isLocked = Boolean(this.task.manual_schedule);
     const isRecurring = Boolean(this.task.recurrence);
@@ -184,7 +188,7 @@ export class CronoTaskCard extends LitElement {
                 </span>
               ` : ''}
               <span>⏱ ${this.task.duration_hours}h</span>
-              ${tagNames ? html`<span>🏷 ${tagNames}</span>` : ''}
+              ${tagDisplay ? html`<span>🏷 ${tagDisplay}</span>` : ''}
               ${this.task.deadline ? html`<span>📅 ${this.task.deadline.split('T')[0]}</span>` : ''}
             </div>
           </div>

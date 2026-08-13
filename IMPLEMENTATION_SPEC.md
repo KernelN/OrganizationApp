@@ -89,6 +89,9 @@ cronograma/
 │   │   │   └── settings-view.js         # All settings in one view
 │   │   └── shared/
 │   │       ├── color-picker.js
+│   │       ├── date-picker.js           # 100% custom month calendar date picker
+│   │       ├── datetime-picker.js       # Unified side-by-side date+time picker popover
+│   │       ├── time-picker-24h.js       # Strict 24h two-column time picker
 │   │       ├── time-range-input.js
 │   │       ├── alert-badge.js
 │   │       ├── drawer-panel.js          # Slide-in detail drawer
@@ -258,6 +261,7 @@ sequenceDiagram
   "properties": {
     "id":                     { "type": "string", "description": "ULID" },
     "name":                   { "type": "string", "minLength": 1, "maxLength": 100 },
+    "parent_tag_id":          { "type": ["string", "null"], "default": null, "description": "Optional parent tag ULID for hierarchical subtags (max depth 4, no cycles)" },
     "color":                  { "type": "string", "pattern": "^#[0-9A-Fa-f]{6}$" },
     "duration_hours":         { "type": ["number", "null"], "minimum": 0, "default": null, "description": "Auto-computed time budget from assigned active tasks" },
     "deadline":               { "type": ["string", "null"], "format": "date-time", "default": null },
@@ -555,16 +559,29 @@ FUNCTION computeSchedule(tasks, tags, dependencies, settings, now):
     lockedBlocks.push({ task_id: task.id, start, end, is_locked: true, alert_level: "none" })
 
   // ─── PHASE 2: Compute Tag Time Windows ──────────────────
-  tagWindowMap = {}  // tag_id -> Map<date_string, [{start, end}]>
-  dayCursors = {}    // date_string -> HH:MM cursor for dynamic stacking
+  tagWindowMap = {}       // tag_id -> Map<date_string, [{start, end}]>
+  globalDayCursors = {}   // date_string -> HH:MM cursor for root tags
+  subtagDayCursors = {}   // parent_tag_id -> Map<date_string, HH:MM> for subtag carving
   
-  FOR tag IN tags WHERE tag.time_window_mode != "none":
+  // Sort tags by hierarchy depth (root tags first, then subtags), prioritizing manual before auto at same depth
+  sortedTags = sort(tags, comparator: (a, b) => {
+    depthDiff = getTagDepth(a.id) - getTagDepth(b.id)
+    if (depthDiff != 0) return depthDiff
+    if (a.time_window_mode == "manual" && b.time_window_mode != "manual") return -1
+    if (a.time_window_mode != "manual" && b.time_window_mode == "manual") return 1
+    return 0
+  })
+
+  FOR tag IN sortedTags WHERE tag.time_window_mode != "none":
+    parentWindows = tag.parent_tag_id ? tagWindowMap[tag.parent_tag_id] : null
+    activeCursors = tag.parent_tag_id ? subtagDayCursors[tag.parent_tag_id] : globalDayCursors
+
     IF tag.time_window_mode == "manual":
-      // Use fixed windows per day-of-week
-      tagWindowMap[tag.id] = expandManualWindows(tag.time_windows, now, horizon)
+      // Use fixed windows clamped against parent tag windows (if subtag)
+      tagWindowMap[tag.id] = expandManualWindows(tag.time_windows, now, horizon, parentWindows)
+      updateCursors(activeCursors, tagWindowMap[tag.id])
     
     ELSE IF tag.time_window_mode == "auto":
-      // Calculate required daily allocation
       tagTasks = tasks.filter(t => t.tag_ids.includes(tag.id) AND t.status == "active" AND t.manual_schedule == null)
       totalHoursNeeded = sum(tagTasks.map(t => t.duration_hours))
       
@@ -575,7 +592,12 @@ FUNCTION computeSchedule(tasks, tags, dependencies, settings, now):
       minDailyHours = tag.auto_expand_config.minimum_daily_hours
       requiredDailyHours = max(minDailyHours, totalHoursNeeded / availableDays)
       
-      // Split global work windows into sub-chunks around breaks and stack dynamically
+      // If subtag, subtract manual windows of sibling subtags under same parent
+      effectiveParentWindows = parentWindows
+      IF tag.parent_tag_id != null AND parentWindows != null:
+        effectiveParentWindows = subtractSiblingWindows(parentWindows, tag.parent_tag_id, tag.id, tagWindowMap)
+
+      // Carve auto windows dynamically from unreserved work windows or parent window slices
       tagWindowMap[tag.id] = generateAutoWindows(
         tag.auto_expand_config.assigned_days,
         requiredDailyHours,
@@ -583,7 +605,8 @@ FUNCTION computeSchedule(tasks, tags, dependencies, settings, now):
         settings.break_windows,
         max(tag.start_date, now),
         tag.deadline ?? horizon,
-        dayCursors
+        activeCursors,
+        effectiveParentWindows
       )
 
   // ─── PHASE 3: Generate Tag Time-Slot Blocks ─────────────
@@ -1348,7 +1371,30 @@ Organized into collapsible sections:
 2. **Appearance** — Accent color picker, locale
 3. **Tasks** — Default accumulation cap, completed history limit
 4. **Sync** — GitHub PAT input (password-masked), repo owner, repo name, branch, data path, "Test Connection" button, "Sync Now" button, "Pull from GitHub" button (with confirmation), last sync timestamp
-5. **About** — Version, links
+#### 5.3.7 Date, Time & DateTime Custom Picker Suite
+
+All date and time selections in the application strictly avoid browser-native `<input type="date">`, `<input type="time">`, and `<input type="datetime-local">` widgets, using custom Web Components:
+
+1. **`<crono-date-picker>`**:
+   - Renders a 100% custom month calendar matrix with Mon–Sun weekday headers, previous/next month navigation, current day outline, selected day highlighting, and quick "Today" and "Clear" buttons.
+   - Text input trigger displaying `YYYY-MM-DD`.
+   - Used for date-only fields (e.g. Tag Start Date and Tag Deadline).
+
+2. **`<crono-time-picker-24h>`**:
+   - Strict 24-hour two-column popover (Hours `00–23` and Minutes `00–55` + `:59` end-of-day precision).
+   - Features auto-scroll centering on open, grayed-out invalid interval slices, and animated clamp warning bubbles.
+   - Used for standalone time fields and within `<crono-time-range-input>`.
+
+3. **`<crono-datetime-picker>`**:
+   - Single unified text input trigger displaying `YYYY-MM-DD HH:MM`.
+   - Opens a unified side-by-side popover displaying the custom month calendar on the left pane and the 24-hour two-column time selector on the right pane.
+   - Includes quick footer shortcuts: "Today", "Now", "23:59" (End of Day), "Clear", and "Done ✓".
+   - Used for combined datetime fields (e.g. Task Manual Locked Start Time and Task Deadline).
+
+4. **Smart Viewport & Drawer Collision Detection**:
+   - All pickers dynamically measure trigger position relative to window bounds on open.
+   - Automatically flips alignment to `right: 0` when in right-side drawer panels or near the right screen boundary, preventing any clipping or off-screen overflow.
+   - Flips upward (`bottom: calc(100% + 4px)`) if rendered near the bottom of the viewport.
 
 ### 5.4 Interaction Patterns
 
@@ -1539,3 +1585,4 @@ class NotificationProvider {
 | PWA | Basic (service worker cache + Add to Home Screen) |
 | Data export | No export/import V1 (GitHub sync only) |
 | Break hours | Per-day-of-week configurable slots |
+| Date & Time pickers | 100% custom suite (`<crono-date-picker>`, `<crono-time-picker-24h>`, `<crono-datetime-picker>`) with unified side-by-side popover and auto-flip collision detection |

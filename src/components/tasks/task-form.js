@@ -1,9 +1,12 @@
 import { LitElement, html, css } from 'lit';
 import { sharedStyles } from '../../styles/shared-styles.js';
-import { validateTaskTagConstraints } from '../../utils/validators.js';
+import { validateTaskTagConstraints, getTagDescendants, getTagDepth } from '../../utils/validators.js';
+import { parseMarkdown } from '../../utils/markdown.js';
 import { appState } from '../../state/app-state.js';
 import { addHours, formatHHMM } from '../../utils/date-utils.js';
 import '../shared/color-picker.js';
+import '../shared/time-picker-24h.js';
+import '../shared/datetime-picker.js';
 
 const DAYS_MAP = [
   { idx: 0, label: 'Mon' },
@@ -102,12 +105,66 @@ export class CronoTaskForm extends LitElement {
         font-size: 12px;
         cursor: pointer;
         transition: background var(--transition-fast), border-color var(--transition-fast);
+        display: inline-flex;
+        align-items: center;
       }
       .chip.selected {
         background: var(--accent-muted);
         border-color: var(--accent);
         color: var(--text-primary);
         font-weight: 600;
+      }
+      .tab-toggle {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        background: var(--bg-tertiary);
+        padding: 2px;
+        border-radius: var(--radius-sm);
+        border: 1px solid var(--border);
+      }
+      .tab-btn {
+        background: transparent;
+        border: none;
+        padding: 2px 8px;
+        font-size: 11px;
+        font-weight: 600;
+        color: var(--text-secondary);
+        border-radius: var(--radius-sm);
+        cursor: pointer;
+        transition: background var(--transition-fast), color var(--transition-fast);
+      }
+      .tab-btn.active {
+        background: var(--bg-surface);
+        color: var(--text-primary);
+        box-shadow: var(--shadow-sm);
+      }
+      .description-preview {
+        min-height: 80px;
+        max-height: 240px;
+        overflow-y: auto;
+        padding: var(--space-sm) var(--space-md);
+        background: var(--bg-surface);
+        border: 1px solid var(--border);
+        border-radius: var(--radius-md);
+      }
+      .tag-hierarchy-tree {
+        display: flex;
+        flex-direction: column;
+        gap: var(--space-xs);
+      }
+      .tag-row-branch {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+      }
+      .subtag-children-container {
+        display: flex;
+        flex-wrap: wrap;
+        gap: var(--space-xs);
+        margin-left: 18px;
+        padding-left: var(--space-sm);
+        border-left: 2px dashed var(--border);
       }
       .section-divider {
         border-top: 1px solid var(--border);
@@ -178,8 +235,19 @@ export class CronoTaskForm extends LitElement {
     this.task = null;
     this.tags = [];
     this.allTasks = [];
+    this.pendingDependencies = [];
 
-    this._resetForm();
+    this.reset(null);
+  }
+
+  reset(task = null) {
+    this.task = task;
+    if (task && task.id) {
+      this._loadTask(task);
+    } else {
+      this._resetForm();
+    }
+    this.requestUpdate();
   }
 
   _resetForm() {
@@ -188,6 +256,9 @@ export class CronoTaskForm extends LitElement {
       const pad = (n) => String(n).padStart(2, '0');
       return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
     };
+
+    this.descriptionTab = 'edit';
+    this.pendingDependencies = [];
 
     this.formData = {
       title: '',
@@ -232,59 +303,73 @@ export class CronoTaskForm extends LitElement {
     this.newLogNote = '';
   }
 
+  _loadTask(task) {
+    this.descriptionTab = 'preview';
+    this.pendingDependencies = [];
+
+    const dur = task.duration_hours || 1;
+    this.durationHours = Math.floor(dur);
+    this.durationMins = Math.round((dur - this.durationHours) * 60);
+
+    const alertTot = task.alert_window_hours ?? 24;
+    this.alertDays = Math.floor(alertTot / 24);
+    this.alertHours = Math.round(alertTot % 24);
+
+    this.scheduleMode = task.manual_schedule ? 'manual' : 'auto';
+    if (task.manual_schedule) {
+      if (task.manual_schedule.start && task.manual_schedule.start.length === 5) {
+        this.manualTimeOfDayStart = task.manual_schedule.start;
+      } else if (task.manual_schedule.start) {
+        const sDate = new Date(task.manual_schedule.start);
+        this.manualStart = task.manual_schedule.start.substring(0, 16);
+        this.manualTimeOfDayStart = `${String(sDate.getHours()).padStart(2, '0')}:${String(sDate.getMinutes()).padStart(2, '0')}`;
+      }
+    }
+
+    this.isRecurring = Boolean(task.recurrence);
+    if (task.recurrence) {
+      const r = task.recurrence;
+      this.recType = r.type || 'weekly';
+      this.recInterval = r.interval || 1;
+      this.recMaxRepeats = r.max_repeats || null;
+      this.recDaysOfWeek = Array.isArray(r.days_of_week) ? [...r.days_of_week] : [0, 2, 4];
+      this.recMonthlyMode = r.monthly_mode || 'day_of_month';
+      this.recDayOfMonth = r.day_of_month || new Date().getDate();
+      this.recNthWeekdayNth = r.nth_weekday?.nth || 1;
+      this.recNthWeekdayDay = r.nth_weekday?.day_of_week ?? 2;
+      this.recAccumulates = r.accumulates ?? true;
+      this.recAccumulationCap = r.accumulation_cap || 5;
+      this.recCumulativeDays = Array.isArray(r.cumulative_days) ? [...r.cumulative_days] : [0, 1, 2, 3, 4];
+      this.recNextOccurrence = r.next_occurrence ? r.next_occurrence.substring(0, 16) : '';
+    }
+
+    this.formData = {
+      title: task.title || '',
+      description: task.description || '',
+      color: task.color || '#6366F1',
+      priority: task.priority || 0,
+      tag_ids: Array.isArray(task.tag_ids) ? [...task.tag_ids] : [],
+      deadline: task.deadline ? task.deadline.substring(0, 16) : '',
+      splittable: task.splittable ?? true,
+      ignore_breaks: task.ignore_breaks ?? false,
+      manual_schedule: task.manual_schedule ? { ...task.manual_schedule } : null,
+      recurrence: task.recurrence ? { ...task.recurrence } : null
+    };
+
+    this.selectedDepId = '';
+    this.selectedDepType = 'hard';
+    this.logHours = 1;
+    this.logMins = 0;
+    this.newLogNote = '';
+  }
+
   willUpdate(changedProperties) {
-    if (changedProperties.has('task') && this.task) {
-      const dur = this.task.duration_hours || 1;
-      this.durationHours = Math.floor(dur);
-      this.durationMins = Math.round((dur - this.durationHours) * 60);
-
-      const alertTot = this.task.alert_window_hours ?? 24;
-      this.alertDays = Math.floor(alertTot / 24);
-      this.alertHours = Math.round(alertTot % 24);
-
-      this.scheduleMode = this.task.manual_schedule ? 'manual' : 'auto';
-      if (this.task.manual_schedule) {
-        if (this.task.manual_schedule.start && this.task.manual_schedule.start.length === 5) {
-          this.manualTimeOfDayStart = this.task.manual_schedule.start;
-        } else if (this.task.manual_schedule.start) {
-          const sDate = new Date(this.task.manual_schedule.start);
-          this.manualStart = this.task.manual_schedule.start.substring(0, 16);
-          this.manualTimeOfDayStart = `${String(sDate.getHours()).padStart(2, '0')}:${String(sDate.getMinutes()).padStart(2, '0')}`;
-        }
+    if (changedProperties.has('task')) {
+      if (this.task && this.task.id) {
+        this._loadTask(this.task);
+      } else {
+        this._resetForm();
       }
-
-      this.isRecurring = Boolean(this.task.recurrence);
-      if (this.task.recurrence) {
-        const r = this.task.recurrence;
-        this.recType = r.type || 'weekly';
-        this.recInterval = r.interval || 1;
-        this.recMaxRepeats = r.max_repeats || null;
-        this.recDaysOfWeek = Array.isArray(r.days_of_week) ? [...r.days_of_week] : [0, 2, 4];
-        this.recMonthlyMode = r.monthly_mode || 'day_of_month';
-        this.recDayOfMonth = r.day_of_month || new Date().getDate();
-        this.recNthWeekdayNth = r.nth_weekday?.nth || 1;
-        this.recNthWeekdayDay = r.nth_weekday?.day_of_week ?? 2;
-        this.recAccumulates = r.accumulates ?? true;
-        this.recAccumulationCap = r.accumulation_cap || 5;
-        this.recCumulativeDays = Array.isArray(r.cumulative_days) ? [...r.cumulative_days] : [0, 1, 2, 3, 4];
-        this.recNextOccurrence = r.next_occurrence ? r.next_occurrence.substring(0, 16) : '';
-      }
-
-      this.formData = {
-        title: this.task.title || '',
-        description: this.task.description || '',
-        color: this.task.color || '#6366F1',
-        priority: this.task.priority || 0,
-        tag_ids: Array.isArray(this.task.tag_ids) ? [...this.task.tag_ids] : [],
-        deadline: this.task.deadline ? this.task.deadline.substring(0, 16) : '',
-        splittable: this.task.splittable ?? true,
-        ignore_breaks: this.task.ignore_breaks ?? false,
-        manual_schedule: this.task.manual_schedule ? { ...this.task.manual_schedule } : null,
-        recurrence: this.task.recurrence ? { ...this.task.recurrence } : null
-      };
-
-      this.logHours = 1;
-      this.logMins = 0;
     }
   }
 
@@ -322,6 +407,11 @@ export class CronoTaskForm extends LitElement {
     const ids = new Set(this.formData.tag_ids);
     if (ids.has(tagId)) {
       ids.delete(tagId);
+      // Cascade uncheck all descendant subtags
+      const descendants = getTagDescendants(tagId, this.tags);
+      for (const d of descendants) {
+        ids.delete(d.id);
+      }
     } else {
       ids.add(tagId);
     }
@@ -333,6 +423,33 @@ export class CronoTaskForm extends LitElement {
     } catch (err) {
       alert(err.message);
     }
+  }
+
+  _renderTagBranch(tag) {
+    const isSelected = this.formData.tag_ids.includes(tag.id);
+    const children = this.tags.filter(t => t.parent_tag_id === tag.id);
+    const depth = getTagDepth(tag.id, this.tags);
+
+    return html`
+      <div class="tag-row-branch">
+        <button
+          type="button"
+          class="chip ${isSelected ? 'selected' : ''}"
+          @click=${() => this._toggleTag(tag.id)}
+        >
+          <span style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background-color: ${tag.color}; margin-right: 5px;"></span>
+          <span>${tag.name}</span>
+          ${tag.time_window_mode !== 'none' ? html`<span style="margin-left: 4px;">⏰</span>` : ''}
+          ${children.length > 0 ? html`<span style="opacity: 0.6; font-size: 10px; margin-left: 4px;">(${children.length} sub)</span>` : ''}
+        </button>
+
+        ${isSelected && children.length > 0 ? html`
+          <div class="subtag-children-container">
+            ${children.map(child => this._renderTagBranch(child))}
+          </div>
+        ` : ''}
+      </div>
+    `;
   }
 
   _toggleDayOfWeek(dayIdx) {
@@ -351,7 +468,7 @@ export class CronoTaskForm extends LitElement {
     this.requestUpdate();
   }
 
-  _onSubmit(e) {
+  async _onSubmit(e) {
     e.preventDefault();
 
     const computedDuration = Number(this.durationHours || 0) + (Number(this.durationMins || 0) / 60);
@@ -411,26 +528,59 @@ export class CronoTaskForm extends LitElement {
       recurrence
     };
 
+    let savedTask = null;
     if (this.task && this.task.id) {
-      appState.updateTask(this.task.id, payload);
+      savedTask = await appState.updateTask(this.task.id, payload);
     } else {
-      appState.createTask(payload);
+      savedTask = await appState.createTask(payload);
+      if (savedTask && savedTask.id && this.pendingDependencies?.length > 0) {
+        for (const dep of this.pendingDependencies) {
+          try {
+            await appState.createDependency({
+              task_id: savedTask.id,
+              depends_on_id: dep.depends_on_id,
+              type: dep.type
+            });
+          } catch (err) {
+            console.error('Failed to create staged dependency:', err);
+          }
+        }
+        this.pendingDependencies = [];
+      }
     }
 
-    this.dispatchEvent(new CustomEvent('crono-form-saved', { bubbles: true, composed: true }));
+    this.dispatchEvent(new CustomEvent('crono-form-saved', { detail: { task: savedTask }, bubbles: true, composed: true }));
+    this.dispatchEvent(new CustomEvent('crono-task-form:save', { detail: { task: savedTask }, bubbles: true, composed: true }));
   }
 
   async _addDependency() {
-    if (!this.task || !this.task.id || !this.selectedDepId) return;
-    try {
-      await appState.createDependency({
-        task_id: this.task.id,
-        depends_on_id: this.selectedDepId,
-        type: this.selectedDepType
-      });
+    if (!this.selectedDepId) return;
+
+    if (this.task && this.task.id) {
+      try {
+        await appState.createDependency({
+          task_id: this.task.id,
+          depends_on_id: this.selectedDepId,
+          type: this.selectedDepType
+        });
+        this.selectedDepId = '';
+        this.requestUpdate();
+      } catch (err) {
+        alert(err.message);
+      }
+    } else {
+      if (!this.pendingDependencies) this.pendingDependencies = [];
+      const alreadyAdded = this.pendingDependencies.some(d => d.depends_on_id === this.selectedDepId);
+      if (alreadyAdded) {
+        alert('This dependency is already added.');
+        return;
+      }
+      this.pendingDependencies = [
+        ...this.pendingDependencies,
+        { depends_on_id: this.selectedDepId, type: this.selectedDepType }
+      ];
+      this.selectedDepId = '';
       this.requestUpdate();
-    } catch (err) {
-      alert(err.message);
     }
   }
 
@@ -466,12 +616,35 @@ export class CronoTaskForm extends LitElement {
         </div>
 
         <div class="form-group">
-          <label>Description</label>
-          <textarea
-            class="crono-textarea"
-            .value=${this.formData.description}
-            @input=${(e) => (this.formData.description = e.target.value)}
-          ></textarea>
+          <div style="display: flex; justify-content: space-between; align-items: center;">
+            <label>Description</label>
+            <div class="tab-toggle">
+              <button
+                type="button"
+                class="tab-btn ${this.descriptionTab === 'edit' ? 'active' : ''}"
+                @click=${() => { this.descriptionTab = 'edit'; this.requestUpdate(); }}
+              >✏️ Edit</button>
+              <button
+                type="button"
+                class="tab-btn ${this.descriptionTab === 'preview' ? 'active' : ''}"
+                @click=${() => { this.descriptionTab = 'preview'; this.requestUpdate(); }}
+              >👁️ Preview</button>
+            </div>
+          </div>
+          ${this.descriptionTab === 'edit' ? html`
+            <textarea
+              class="crono-textarea"
+              .value=${this.formData.description}
+              @input=${(e) => (this.formData.description = e.target.value)}
+              placeholder="Supports markdown: **bold**, *italic*, - list, - [ ] task, \`code\`, # heading, tables..."
+            ></textarea>
+          ` : html`
+            <div class="description-preview markdown-body">
+              ${this.formData.description && this.formData.description.trim()
+                ? html`<div .innerHTML=${parseMarkdown(this.formData.description)}></div>`
+                : html`<span style="color: var(--text-secondary); font-style: italic;">No description provided.</span>`}
+            </div>
+          `}
         </div>
 
         <!-- Duration & Priority -->
@@ -545,25 +718,21 @@ export class CronoTaskForm extends LitElement {
             <label>🔒 Manual Locked Start Time</label>
             ${this.isRecurring ? html`
               <div class="form-group">
-                <label>Daily/Weekly Starting Time</label>
-                <input
-                  type="time"
-                  class="crono-input"
+                <label>Daily/Weekly Starting Time (24h)</label>
+                <crono-time-picker-24h
                   .value=${this.manualTimeOfDayStart}
-                  @input=${e => { this.manualTimeOfDayStart = e.target.value; this.requestUpdate(); }}
-                  required
-                />
+                  @crono-time-change=${e => { this.manualTimeOfDayStart = e.detail.value; this.requestUpdate(); }}
+                ></crono-time-picker-24h>
               </div>
             ` : html`
               <div class="form-group">
                 <label>Starting Date & Time</label>
-                <input
-                  type="datetime-local"
-                  class="crono-input"
+                <crono-datetime-picker
                   .value=${this.manualStart}
-                  @input=${e => { this.manualStart = e.target.value; this.requestUpdate(); }}
-                  required
-                />
+                  .defaultTime=${'09:00'}
+                  ?required=${true}
+                  @crono-datetime-change=${e => { this.manualStart = e.detail.value; this.requestUpdate(); }}
+                ></crono-datetime-picker>
               </div>
             `}
             <div class="calculated-preview">
@@ -761,31 +930,26 @@ export class CronoTaskForm extends LitElement {
         </div>
 
         <div class="form-group">
-          <label>Tags (Max 1 time-windowed tag)</label>
-          <div class="chip-group">
-            ${this.tags.map(
-              (tg) => html`
-                <button
-                  type="button"
-                  class="chip ${this.formData.tag_ids.includes(tg.id) ? 'selected' : ''}"
-                  @click=${() => this._toggleTag(tg.id)}
-                >
-                  ${tg.name} ${tg.time_window_mode !== 'none' ? '⏰' : ''}
-                </button>
-              `
-            )}
+          <label>Tags & Subtags</label>
+          <div class="tag-hierarchy-tree">
+            ${this.tags.filter(t => !t.parent_tag_id).length === 0 ? html`
+              <span style="font-size: 12px; color: var(--text-secondary); font-style: italic;">No tags created yet.</span>
+            ` : html`
+              <div class="chip-group">
+                ${this.tags.filter(t => !t.parent_tag_id).map(rootTag => this._renderTagBranch(rootTag))}
+              </div>
+            `}
           </div>
         </div>
 
         <!-- Deadline row -->
         <div class="form-group">
           <label>Deadline (Optional)</label>
-          <input
-            type="datetime-local"
-            class="crono-input"
+          <crono-datetime-picker
             .value=${this.formData.deadline}
-            @input=${(e) => (this.formData.deadline = e.target.value)}
-          />
+            .defaultTime=${'23:59'}
+            @crono-datetime-change=${e => { this.formData.deadline = e.detail.value; this.requestUpdate(); }}
+          ></crono-datetime-picker>
         </div>
 
         <!-- Alert Window on its own separate row below Deadline to avoid any cutoff -->
@@ -835,24 +999,34 @@ export class CronoTaskForm extends LitElement {
           </div>
         </div>
 
-        ${this.task && this.task.id ? html`
-          <div class="section-divider">Dependencies</div>
-          <div class="row">
-            <select class="crono-select" @change=${e => this.selectedDepId = e.target.value}>
-              <option value="">-- Select Prerequisite Task --</option>
-              ${this.allTasks.filter(t => t.id !== this.task.id).map(t => html`
-                <option value=${t.id}>${t.title}</option>
-              `)}
-            </select>
-            <select class="crono-select" @change=${e => this.selectedDepType = e.target.value}>
-              <option value="hard">Hard (Strict order)</option>
-              <option value="soft">Soft (Preferred order)</option>
-            </select>
-            <button type="button" class="crono-btn crono-btn-secondary" @click=${this._addDependency}>Add</button>
-          </div>
-          <div class="logs-list">
+        <!-- Dependencies (Available for both New and Edit views) -->
+        <div class="section-divider">Dependencies</div>
+        <div class="row">
+          <select
+            class="crono-select"
+            .value=${this.selectedDepId}
+            @change=${e => this.selectedDepId = e.target.value}
+          >
+            <option value="">-- Select Prerequisite Task --</option>
+            ${(this.allTasks || [])
+              .filter(t => !this.task || t.id !== this.task.id)
+              .map(t => html`<option value=${t.id}>${t.title}</option>`)}
+          </select>
+          <select
+            class="crono-select"
+            .value=${this.selectedDepType}
+            @change=${e => this.selectedDepType = e.target.value}
+          >
+            <option value="hard">Hard (Strict order)</option>
+            <option value="soft">Soft (Preferred order)</option>
+          </select>
+          <button type="button" class="crono-btn crono-btn-secondary" @click=${this._addDependency}>Add</button>
+        </div>
+
+        <div class="logs-list">
+          ${this.task && this.task.id ? html`
             ${existingDeps.map(d => {
-              const depTask = this.allTasks.find(t => t.id === d.depends_on_id);
+              const depTask = (this.allTasks || []).find(t => t.id === d.depends_on_id);
               return html`
                 <div class="log-item">
                   <span>Depends on: ${depTask ? depTask.title : d.depends_on_id} (${d.type})</span>
@@ -860,8 +1034,28 @@ export class CronoTaskForm extends LitElement {
                 </div>
               `;
             })}
-          </div>
+          ` : html`
+            ${(this.pendingDependencies || []).map((d, idx) => {
+              const depTask = (this.allTasks || []).find(t => t.id === d.depends_on_id);
+              return html`
+                <div class="log-item">
+                  <span>Depends on: ${depTask ? depTask.title : d.depends_on_id} (${d.type})</span>
+                  <button
+                    type="button"
+                    class="crono-btn crono-btn-icon"
+                    @click=${() => {
+                      this.pendingDependencies = this.pendingDependencies.filter((_, i) => i !== idx);
+                      this.requestUpdate();
+                    }}
+                  >✕</button>
+                </div>
+              `;
+            })}
+          `}
+        </div>
 
+        <!-- Time Tracking Log (Only for existing saved tasks) -->
+        ${this.task && this.task.id ? html`
           <div class="section-divider">Time Tracking Log</div>
           <div class="row" style="align-items: center;">
             <div class="unit-pair" style="flex-shrink: 0;">

@@ -67,11 +67,19 @@ export class CronoTaskListView extends LitElement {
   _openCreateDrawer() {
     this.editingTask = null;
     this.drawerOpen = true;
+    const form = this.shadowRoot?.querySelector('crono-task-form');
+    if (form && typeof form.reset === 'function') {
+      form.reset(null);
+    }
   }
 
   _openEditDrawer(task) {
     this.editingTask = task;
     this.drawerOpen = true;
+    const form = this.shadowRoot?.querySelector('crono-task-form');
+    if (form && typeof form.reset === 'function') {
+      form.reset(task);
+    }
   }
 
   render() {

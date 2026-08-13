@@ -1,7 +1,10 @@
 import { LitElement, html, css } from 'lit';
 import { sharedStyles } from '../../styles/shared-styles.js';
 import { appState } from '../../state/app-state.js';
+import { getTagDepth, getTagDescendants, validateTagHierarchy } from '../../utils/validators.js';
+import { subtractTimeWindows } from '../../engine/tag-window-expander.js';
 import '../shared/color-picker.js';
+import '../shared/date-picker.js';
 import './tag-time-window-editor.js';
 
 const DAYS_MAP = [
@@ -15,7 +18,7 @@ const DAYS_MAP = [
 ];
 
 /**
- * <crono-tag-form> — Create and edit form for tags with auto-computed time budget.
+ * <crono-tag-form> — Create and edit form for tags with hierarchy and auto-computed time budget.
  */
 export class CronoTagForm extends LitElement {
   static styles = [
@@ -99,19 +102,48 @@ export class CronoTagForm extends LitElement {
         border-radius: var(--radius-sm);
         border-left: 3px solid var(--accent);
       }
+      .parent-info-badge {
+        font-size: 12px;
+        padding: var(--space-xs) var(--space-sm);
+        background: var(--bg-surface);
+        border: 1px solid var(--border);
+        border-radius: var(--radius-sm);
+        display: flex;
+        align-items: center;
+        gap: var(--space-xs);
+      }
     `
   ];
 
   static properties = {
-    tag: { type: Object }
+    tag: { type: Object },
+    initialParentId: { type: String }
   };
 
   constructor() {
     super();
     this.tag = null;
+    this.initialParentId = null;
+    this._resetForm(null);
+  }
+
+  reset(tag = null, initialParentId = null) {
+    this.tag = tag;
+    this.initialParentId = initialParentId;
+    if (tag && tag.id) {
+      this._loadTag(tag);
+    } else {
+      this._resetForm(initialParentId);
+    }
+    this.requestUpdate();
+  }
+
+  _resetForm(initialParentId = null) {
+    const parentTag = (initialParentId && (appState.tags || []).find(t => t.id === initialParentId)) || null;
     this.formData = {
       name: '',
-      color: '#3B82F6',
+      color: parentTag ? parentTag.color : '#3B82F6',
+      parent_tag_id: initialParentId || null,
       deadline: '',
       start_date: '',
       needs_dedicated_timeslot: false,
@@ -124,21 +156,30 @@ export class CronoTagForm extends LitElement {
     };
   }
 
+  _loadTag(tag) {
+    this.formData = {
+      name: tag.name || '',
+      color: tag.color || '#3B82F6',
+      parent_tag_id: tag.parent_tag_id || null,
+      deadline: tag.deadline ? tag.deadline.split('T')[0] : '',
+      start_date: tag.start_date ? tag.start_date.split('T')[0] : '',
+      needs_dedicated_timeslot: tag.needs_dedicated_timeslot ?? false,
+      time_window_mode: tag.time_window_mode || 'none',
+      time_windows: tag.time_windows || {},
+      auto_expand_config: tag.auto_expand_config || {
+        minimum_daily_hours: 1.0,
+        assigned_days: [0, 1, 2, 3, 4]
+      }
+    };
+  }
+
   willUpdate(changedProperties) {
-    if (changedProperties.has('tag') && this.tag) {
-      this.formData = {
-        name: this.tag.name || '',
-        color: this.tag.color || '#3B82F6',
-        deadline: this.tag.deadline ? this.tag.deadline.split('T')[0] : '',
-        start_date: this.tag.start_date ? this.tag.start_date.split('T')[0] : '',
-        needs_dedicated_timeslot: this.tag.needs_dedicated_timeslot ?? false,
-        time_window_mode: this.tag.time_window_mode || 'none',
-        time_windows: this.tag.time_windows || {},
-        auto_expand_config: this.tag.auto_expand_config || {
-          minimum_daily_hours: 1.0,
-          assigned_days: [0, 1, 2, 3, 4]
-        }
-      };
+    if (changedProperties.has('tag') || changedProperties.has('initialParentId')) {
+      if (this.tag && this.tag.id) {
+        this._loadTag(this.tag);
+      } else {
+        this._resetForm(this.initialParentId);
+      }
     }
   }
 
@@ -158,31 +199,84 @@ export class CronoTagForm extends LitElement {
     this.requestUpdate();
   }
 
-  _onSubmit(e) {
+  async _onSubmit(e) {
     e.preventDefault();
 
+    const allTags = appState.tags || [];
     const tagTasks = appState.tasks.filter(t => Array.isArray(t.tag_ids) && t.tag_ids.includes(this.tag?.id) && t.status === 'active');
     const autoDuration = tagTasks.reduce((sum, t) => sum + (t.duration_hours || 0), 0);
 
     const payload = {
       ...this.formData,
+      parent_tag_id: this.formData.parent_tag_id || null,
       duration_hours: autoDuration > 0 ? autoDuration : null,
       deadline: this.formData.deadline ? new Date(this.formData.deadline).toISOString() : null,
       start_date: this.formData.start_date ? new Date(this.formData.start_date).toISOString() : null
     };
 
     if (this.tag && this.tag.id) {
-      appState.updateTag(this.tag.id, payload);
-    } else {
-      appState.createTag(payload);
+      payload.id = this.tag.id;
     }
 
-    this.dispatchEvent(new CustomEvent('crono-form-saved', { bubbles: true, composed: true }));
+    try {
+      validateTagHierarchy(payload, allTags);
+    } catch (err) {
+      alert(err.message);
+      return;
+    }
+
+    let savedTag = null;
+    if (this.tag && this.tag.id) {
+      savedTag = await appState.updateTag(this.tag.id, payload);
+    } else {
+      savedTag = await appState.createTag(payload);
+    }
+
+    this.dispatchEvent(new CustomEvent('crono-form-saved', { detail: { tag: savedTag }, bubbles: true, composed: true }));
+    this.dispatchEvent(new CustomEvent('crono-tag-form:save', { detail: { tag: savedTag }, bubbles: true, composed: true }));
+  }
+
+  _getEligibleParentTags() {
+    const allTags = appState.tags || [];
+    const currentId = this.tag?.id;
+    const descendantIds = currentId ? new Set(getTagDescendants(currentId, allTags).map(d => d.id)) : new Set();
+
+    return allTags.filter(tg => {
+      if (currentId && tg.id === currentId) return false;
+      if (descendantIds.has(tg.id)) return false;
+      // If tag depth is already 4, it cannot have children (depth would exceed 4)
+      const depth = getTagDepth(tg.id, allTags);
+      if (depth >= 4) return false;
+      return true;
+    });
+  }
+  _getEffectiveParentWindows(parentTag) {
+    if (!parentTag || parentTag.time_window_mode !== 'manual') return null;
+    const allTags = appState.tags || [];
+    const currentId = this.tag?.id;
+    // Sibling subtags under the same parent
+    const siblings = allTags.filter(t => t.parent_tag_id === parentTag.id && t.id !== currentId && t.time_window_mode === 'manual');
+
+    const dayNames = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
+    const effective = {};
+
+    for (const day of dayNames) {
+      const baseWins = parentTag.time_windows?.[day] || [];
+      const siblingWins = siblings.flatMap(s => s.time_windows?.[day] || []);
+      effective[day] = subtractTimeWindows(baseWins, siblingWins);
+    }
+    return effective;
   }
 
   render() {
+    const allTags = appState.tags || [];
     const tagTasks = this.tag ? appState.tasks.filter(t => Array.isArray(t.tag_ids) && t.tag_ids.includes(this.tag.id) && t.status === 'active') : [];
     const autoDuration = tagTasks.reduce((sum, t) => sum + (t.duration_hours || 0), 0);
+
+    const eligibleParents = this._getEligibleParentTags();
+    const parentTag = this.formData.parent_tag_id ? allTags.find(t => t.id === this.formData.parent_tag_id) : null;
+    const parentDepth = parentTag ? getTagDepth(parentTag.id, allTags) : 0;
+    const effectiveParentWindows = this._getEffectiveParentWindows(parentTag);
 
     return html`
       <form @submit=${this._onSubmit}>
@@ -194,7 +288,46 @@ export class CronoTagForm extends LitElement {
             required
             .value=${this.formData.name}
             @input=${(e) => (this.formData.name = e.target.value)}
+            placeholder="e.g. Work, Deep Focus, Sub-Project A"
           />
+        </div>
+
+        <!-- Parent Tag Selector (Hierarchy Depth <= 4) -->
+        <div class="form-group">
+          <label>Parent Tag (Optional — Nested up to 4 levels)</label>
+          <select
+            class="crono-select"
+            .value=${this.formData.parent_tag_id || ''}
+            @change=${(e) => {
+              const pId = e.target.value || null;
+              const parent = pId ? allTags.find(t => t.id === pId) : null;
+              this.formData = {
+                ...this.formData,
+                parent_tag_id: pId,
+                color: parent && (!this.tag && (!this.formData.name || this.formData.color === '#3B82F6')) ? parent.color : this.formData.color
+              };
+              this.requestUpdate();
+            }}
+          >
+            <option value="">(None — Top-Level Root Tag)</option>
+            ${eligibleParents.map(p => {
+              const depth = getTagDepth(p.id, allTags);
+              const indent = '— '.repeat(depth - 1);
+              return html`
+                <option value=${p.id}>
+                  ${indent}🏷 ${p.name} (Level ${depth}) ${p.time_window_mode !== 'none' ? '⏰' : ''}
+                </option>
+              `;
+            })}
+          </select>
+          ${parentTag ? html`
+            <div class="parent-info-badge">
+              <span>🔗 Child of <strong>${parentTag.name}</strong> (Creates Level ${parentDepth + 1})</span>
+              ${parentTag.time_window_mode !== 'none' ? html`
+                <span> · ⏰ Parent Mode: <em>${parentTag.time_window_mode}</em></span>
+              ` : ''}
+            </div>
+          ` : ''}
         </div>
 
         <div class="form-group">
@@ -208,22 +341,18 @@ export class CronoTagForm extends LitElement {
         <div class="row">
           <div class="form-group">
             <label>Start Date</label>
-            <input
-              type="date"
-              class="crono-input"
+            <crono-date-picker
               .value=${this.formData.start_date || ''}
-              @input=${(e) => (this.formData.start_date = e.target.value)}
-            />
+              @crono-date-change=${(e) => { this.formData = { ...this.formData, start_date: e.detail.value }; this.requestUpdate(); }}
+            ></crono-date-picker>
           </div>
 
           <div class="form-group">
             <label>Deadline</label>
-            <input
-              type="date"
-              class="crono-input"
+            <crono-date-picker
               .value=${this.formData.deadline || ''}
-              @input=${(e) => (this.formData.deadline = e.target.value)}
-            />
+              @crono-date-change=${(e) => { this.formData = { ...this.formData, deadline: e.detail.value }; this.requestUpdate(); }}
+            ></crono-date-picker>
           </div>
         </div>
 
@@ -244,17 +373,25 @@ export class CronoTagForm extends LitElement {
                 name="time_window_mode"
                 value="none"
                 .checked=${this.formData.time_window_mode === 'none'}
-                @change=${() => (this.formData = { ...this.formData, time_window_mode: 'none' })}
+                @change=${() => {
+                  this.formData = { ...this.formData, time_window_mode: 'none' };
+                  this.requestUpdate();
+                }}
               /> None (Label Only)
             </label>
-            <label class="radio-option">
+            <label class="radio-option" style="${parentTag && parentTag.time_window_mode === 'auto' ? 'opacity: 0.5; cursor: not-allowed;' : ''}">
               <input
                 type="radio"
                 name="time_window_mode"
                 value="manual"
+                .disabled=${Boolean(parentTag && parentTag.time_window_mode === 'auto')}
                 .checked=${this.formData.time_window_mode === 'manual'}
-                @change=${() => (this.formData = { ...this.formData, time_window_mode: 'manual' })}
+                @change=${() => {
+                  this.formData = { ...this.formData, time_window_mode: 'manual' };
+                  this.requestUpdate();
+                }}
               /> Manual Windows
+              ${parentTag && parentTag.time_window_mode === 'auto' ? html`<span style="font-size: 10px; color: var(--text-muted);">(Parent is Auto)</span>` : ''}
             </label>
             <label class="radio-option">
               <input
@@ -262,7 +399,10 @@ export class CronoTagForm extends LitElement {
                 name="time_window_mode"
                 value="auto"
                 .checked=${this.formData.time_window_mode === 'auto'}
-                @change=${() => (this.formData = { ...this.formData, time_window_mode: 'auto' })}
+                @change=${() => {
+                  this.formData = { ...this.formData, time_window_mode: 'auto' };
+                  this.requestUpdate();
+                }}
               /> Auto-Expanding
             </label>
           </div>
@@ -272,8 +412,14 @@ export class CronoTagForm extends LitElement {
           ? html`
               <div class="form-group">
                 <label>Manual Time Windows</label>
+                ${parentTag && parentTag.time_window_mode === 'manual' ? html`
+                  <div class="calculated-preview" style="margin-bottom: var(--space-xs);">
+                    ℹ️ Windows are bounded inside parent (<strong>${parentTag.name}</strong>) unreserved hours.
+                  </div>
+                ` : ''}
                 <crono-tag-time-window-editor
                   .timeWindows=${this.formData.time_windows}
+                  .parentWindows=${effectiveParentWindows}
                   @crono-windows-change=${e => this.formData.time_windows = e.detail.timeWindows}
                 ></crono-tag-time-window-editor>
               </div>
@@ -281,31 +427,62 @@ export class CronoTagForm extends LitElement {
           : ''}
 
         ${this.formData.time_window_mode === 'auto'
-          ? html`
-              <div class="form-group">
-                <label>Minimum Daily Allocation (Hours)</label>
-                <input
-                  type="number"
-                  step="0.5"
-                  class="crono-input"
-                  .value=${String(this.formData.auto_expand_config?.minimum_daily_hours || 1.0)}
-                  @input=${e => this.formData.auto_expand_config.minimum_daily_hours = Number(e.target.value)}
-                />
-              </div>
+          ? (() => {
+              const dayNamesList = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
+              let allowedDayIndices = new Set([0, 1, 2, 3, 4, 5, 6]);
+              if (parentTag) {
+                if (parentTag.time_window_mode === 'auto') {
+                  allowedDayIndices = new Set(parentTag.auto_expand_config?.assigned_days || []);
+                } else if (parentTag.time_window_mode === 'manual') {
+                  allowedDayIndices = new Set(
+                    [0, 1, 2, 3, 4, 5, 6].filter(idx => (effectiveParentWindows?.[dayNamesList[idx]] || []).length > 0)
+                  );
+                }
+              }
 
-              <div class="form-group">
-                <label>Active Days</label>
-                <div class="chip-group">
-                  ${DAYS_MAP.map(d => html`
-                    <button
-                      type="button"
-                      class="chip ${(this.formData.auto_expand_config?.assigned_days || []).includes(d.idx) ? 'selected' : ''}"
-                      @click=${() => this._toggleAssignedDay(d.idx)}
-                    >${d.label}</button>
-                  `)}
+              return html`
+                <div class="form-group">
+                  <label>Minimum Daily Allocation (Hours)</label>
+                  <input
+                    type="number"
+                    step="0.5"
+                    class="crono-input"
+                    .value=${String(this.formData.auto_expand_config?.minimum_daily_hours || 1.0)}
+                    @input=${e => this.formData.auto_expand_config.minimum_daily_hours = Number(e.target.value)}
+                  />
                 </div>
-              </div>
-            `
+
+                <div class="form-group">
+                  <label>Active Days</label>
+                  ${parentTag && parentTag.time_window_mode !== 'none' ? html`
+                    <div class="calculated-preview" style="margin-bottom: var(--space-xs);">
+                      ℹ️ Days are restricted to parent (<strong>${parentTag.name}</strong>) active days.
+                    </div>
+                  ` : ''}
+                  <div class="chip-group">
+                    ${DAYS_MAP.map(d => {
+                      const isAllowed = allowedDayIndices.has(d.idx);
+                      const isSelected = (this.formData.auto_expand_config?.assigned_days || []).includes(d.idx);
+                      return isAllowed ? html`
+                        <button
+                          type="button"
+                          class="chip ${isSelected ? 'selected' : ''}"
+                          @click=${() => this._toggleAssignedDay(d.idx)}
+                        >${d.label}</button>
+                      ` : html`
+                        <button
+                          type="button"
+                          class="chip"
+                          disabled
+                          style="opacity: 0.45; cursor: not-allowed; text-decoration: line-through;"
+                          title="Not allowed in parent tag"
+                        >${d.label}</button>
+                      `;
+                    })}
+                  </div>
+                </div>
+              `;
+            })()
           : ''}
 
         <button type="submit" class="crono-btn crono-btn-primary">Save Tag</button>
@@ -315,3 +492,4 @@ export class CronoTagForm extends LitElement {
 }
 
 customElements.define('crono-tag-form', CronoTagForm);
+
