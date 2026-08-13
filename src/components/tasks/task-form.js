@@ -234,9 +234,19 @@ export class CronoTaskForm extends LitElement {
     this.task = null;
     this.tags = [];
     this.allTasks = [];
-    this.descriptionTab = 'edit';
+    this.pendingDependencies = [];
 
-    this._resetForm();
+    this.reset(null);
+  }
+
+  reset(task = null) {
+    this.task = task;
+    if (task && task.id) {
+      this._loadTask(task);
+    } else {
+      this._resetForm();
+    }
+    this.requestUpdate();
   }
 
   _resetForm() {
@@ -245,6 +255,9 @@ export class CronoTaskForm extends LitElement {
       const pad = (n) => String(n).padStart(2, '0');
       return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
     };
+
+    this.descriptionTab = 'edit';
+    this.pendingDependencies = [];
 
     this.formData = {
       title: '',
@@ -289,64 +302,75 @@ export class CronoTaskForm extends LitElement {
     this.newLogNote = '';
   }
 
+  _loadTask(task) {
+    this.descriptionTab = 'preview';
+    this.pendingDependencies = [];
+
+    const dur = task.duration_hours || 1;
+    this.durationHours = Math.floor(dur);
+    this.durationMins = Math.round((dur - this.durationHours) * 60);
+
+    const alertTot = task.alert_window_hours ?? 24;
+    this.alertDays = Math.floor(alertTot / 24);
+    this.alertHours = Math.round(alertTot % 24);
+
+    this.scheduleMode = task.manual_schedule ? 'manual' : 'auto';
+    if (task.manual_schedule) {
+      if (task.manual_schedule.start && task.manual_schedule.start.length === 5) {
+        this.manualTimeOfDayStart = task.manual_schedule.start;
+      } else if (task.manual_schedule.start) {
+        const sDate = new Date(task.manual_schedule.start);
+        this.manualStart = task.manual_schedule.start.substring(0, 16);
+        this.manualTimeOfDayStart = `${String(sDate.getHours()).padStart(2, '0')}:${String(sDate.getMinutes()).padStart(2, '0')}`;
+      }
+    }
+
+    this.isRecurring = Boolean(task.recurrence);
+    if (task.recurrence) {
+      const r = task.recurrence;
+      this.recType = r.type || 'weekly';
+      this.recInterval = r.interval || 1;
+      this.recMaxRepeats = r.max_repeats || null;
+      this.recDaysOfWeek = Array.isArray(r.days_of_week) ? [...r.days_of_week] : [0, 2, 4];
+      this.recMonthlyMode = r.monthly_mode || 'day_of_month';
+      this.recDayOfMonth = r.day_of_month || new Date().getDate();
+      this.recNthWeekdayNth = r.nth_weekday?.nth || 1;
+      this.recNthWeekdayDay = r.nth_weekday?.day_of_week ?? 2;
+      this.recAccumulates = r.accumulates ?? true;
+      this.recAccumulationCap = r.accumulation_cap || 5;
+      this.recCumulativeDays = Array.isArray(r.cumulative_days) ? [...r.cumulative_days] : [0, 1, 2, 3, 4];
+      this.recNextOccurrence = r.next_occurrence ? r.next_occurrence.substring(0, 16) : '';
+    }
+
+    this.formData = {
+      title: task.title || '',
+      description: task.description || '',
+      color: task.color || '#6366F1',
+      priority: task.priority || 0,
+      tag_ids: Array.isArray(task.tag_ids) ? [...task.tag_ids] : [],
+      deadline: task.deadline ? task.deadline.substring(0, 16) : '',
+      splittable: task.splittable ?? true,
+      ignore_breaks: task.ignore_breaks ?? false,
+      manual_schedule: task.manual_schedule ? { ...task.manual_schedule } : null,
+      recurrence: task.recurrence ? { ...task.recurrence } : null
+    };
+
+    this.selectedDepId = '';
+    this.selectedDepType = 'hard';
+    this.logHours = 1;
+    this.logMins = 0;
+    this.newLogNote = '';
+  }
+
   willUpdate(changedProperties) {
     if (changedProperties.has('task')) {
-      if (this.task) {
-        this.descriptionTab = 'preview';
-        const dur = this.task.duration_hours || 1;
-        this.durationHours = Math.floor(dur);
-        this.durationMins = Math.round((dur - this.durationHours) * 60);
-
-      const alertTot = this.task.alert_window_hours ?? 24;
-      this.alertDays = Math.floor(alertTot / 24);
-      this.alertHours = Math.round(alertTot % 24);
-
-      this.scheduleMode = this.task.manual_schedule ? 'manual' : 'auto';
-      if (this.task.manual_schedule) {
-        if (this.task.manual_schedule.start && this.task.manual_schedule.start.length === 5) {
-          this.manualTimeOfDayStart = this.task.manual_schedule.start;
-        } else if (this.task.manual_schedule.start) {
-          const sDate = new Date(this.task.manual_schedule.start);
-          this.manualStart = this.task.manual_schedule.start.substring(0, 16);
-          this.manualTimeOfDayStart = `${String(sDate.getHours()).padStart(2, '0')}:${String(sDate.getMinutes()).padStart(2, '0')}`;
-        }
+      if (this.task && this.task.id) {
+        this._loadTask(this.task);
+      } else {
+        this._resetForm();
       }
-
-      this.isRecurring = Boolean(this.task.recurrence);
-      if (this.task.recurrence) {
-        const r = this.task.recurrence;
-        this.recType = r.type || 'weekly';
-        this.recInterval = r.interval || 1;
-        this.recMaxRepeats = r.max_repeats || null;
-        this.recDaysOfWeek = Array.isArray(r.days_of_week) ? [...r.days_of_week] : [0, 2, 4];
-        this.recMonthlyMode = r.monthly_mode || 'day_of_month';
-        this.recDayOfMonth = r.day_of_month || new Date().getDate();
-        this.recNthWeekdayNth = r.nth_weekday?.nth || 1;
-        this.recNthWeekdayDay = r.nth_weekday?.day_of_week ?? 2;
-        this.recAccumulates = r.accumulates ?? true;
-        this.recAccumulationCap = r.accumulation_cap || 5;
-        this.recCumulativeDays = Array.isArray(r.cumulative_days) ? [...r.cumulative_days] : [0, 1, 2, 3, 4];
-        this.recNextOccurrence = r.next_occurrence ? r.next_occurrence.substring(0, 16) : '';
-      }
-
-      this.formData = {
-        title: this.task.title || '',
-        description: this.task.description || '',
-        color: this.task.color || '#6366F1',
-        priority: this.task.priority || 0,
-        tag_ids: Array.isArray(this.task.tag_ids) ? [...this.task.tag_ids] : [],
-        deadline: this.task.deadline ? this.task.deadline.substring(0, 16) : '',
-        splittable: this.task.splittable ?? true,
-        ignore_breaks: this.task.ignore_breaks ?? false,
-        manual_schedule: this.task.manual_schedule ? { ...this.task.manual_schedule } : null,
-        recurrence: this.task.recurrence ? { ...this.task.recurrence } : null
-      };
-
-      this.logHours = 1;
-      this.logMins = 0;
     }
   }
-}
 
   _getFormattedNextOccurrence() {
     const raw = this.task?.recurrence?.next_occurrence || this.recNextOccurrence || new Date().toISOString();
@@ -443,7 +467,7 @@ export class CronoTaskForm extends LitElement {
     this.requestUpdate();
   }
 
-  _onSubmit(e) {
+  async _onSubmit(e) {
     e.preventDefault();
 
     const computedDuration = Number(this.durationHours || 0) + (Number(this.durationMins || 0) / 60);
@@ -503,26 +527,59 @@ export class CronoTaskForm extends LitElement {
       recurrence
     };
 
+    let savedTask = null;
     if (this.task && this.task.id) {
-      appState.updateTask(this.task.id, payload);
+      savedTask = await appState.updateTask(this.task.id, payload);
     } else {
-      appState.createTask(payload);
+      savedTask = await appState.createTask(payload);
+      if (savedTask && savedTask.id && this.pendingDependencies?.length > 0) {
+        for (const dep of this.pendingDependencies) {
+          try {
+            await appState.createDependency({
+              task_id: savedTask.id,
+              depends_on_id: dep.depends_on_id,
+              type: dep.type
+            });
+          } catch (err) {
+            console.error('Failed to create staged dependency:', err);
+          }
+        }
+        this.pendingDependencies = [];
+      }
     }
 
-    this.dispatchEvent(new CustomEvent('crono-form-saved', { bubbles: true, composed: true }));
+    this.dispatchEvent(new CustomEvent('crono-form-saved', { detail: { task: savedTask }, bubbles: true, composed: true }));
+    this.dispatchEvent(new CustomEvent('crono-task-form:save', { detail: { task: savedTask }, bubbles: true, composed: true }));
   }
 
   async _addDependency() {
-    if (!this.task || !this.task.id || !this.selectedDepId) return;
-    try {
-      await appState.createDependency({
-        task_id: this.task.id,
-        depends_on_id: this.selectedDepId,
-        type: this.selectedDepType
-      });
+    if (!this.selectedDepId) return;
+
+    if (this.task && this.task.id) {
+      try {
+        await appState.createDependency({
+          task_id: this.task.id,
+          depends_on_id: this.selectedDepId,
+          type: this.selectedDepType
+        });
+        this.selectedDepId = '';
+        this.requestUpdate();
+      } catch (err) {
+        alert(err.message);
+      }
+    } else {
+      if (!this.pendingDependencies) this.pendingDependencies = [];
+      const alreadyAdded = this.pendingDependencies.some(d => d.depends_on_id === this.selectedDepId);
+      if (alreadyAdded) {
+        alert('This dependency is already added.');
+        return;
+      }
+      this.pendingDependencies = [
+        ...this.pendingDependencies,
+        { depends_on_id: this.selectedDepId, type: this.selectedDepType }
+      ];
+      this.selectedDepId = '';
       this.requestUpdate();
-    } catch (err) {
-      alert(err.message);
     }
   }
 
@@ -943,24 +1000,34 @@ export class CronoTaskForm extends LitElement {
           </div>
         </div>
 
-        ${this.task && this.task.id ? html`
-          <div class="section-divider">Dependencies</div>
-          <div class="row">
-            <select class="crono-select" @change=${e => this.selectedDepId = e.target.value}>
-              <option value="">-- Select Prerequisite Task --</option>
-              ${this.allTasks.filter(t => t.id !== this.task.id).map(t => html`
-                <option value=${t.id}>${t.title}</option>
-              `)}
-            </select>
-            <select class="crono-select" @change=${e => this.selectedDepType = e.target.value}>
-              <option value="hard">Hard (Strict order)</option>
-              <option value="soft">Soft (Preferred order)</option>
-            </select>
-            <button type="button" class="crono-btn crono-btn-secondary" @click=${this._addDependency}>Add</button>
-          </div>
-          <div class="logs-list">
+        <!-- Dependencies (Available for both New and Edit views) -->
+        <div class="section-divider">Dependencies</div>
+        <div class="row">
+          <select
+            class="crono-select"
+            .value=${this.selectedDepId}
+            @change=${e => this.selectedDepId = e.target.value}
+          >
+            <option value="">-- Select Prerequisite Task --</option>
+            ${(this.allTasks || [])
+              .filter(t => !this.task || t.id !== this.task.id)
+              .map(t => html`<option value=${t.id}>${t.title}</option>`)}
+          </select>
+          <select
+            class="crono-select"
+            .value=${this.selectedDepType}
+            @change=${e => this.selectedDepType = e.target.value}
+          >
+            <option value="hard">Hard (Strict order)</option>
+            <option value="soft">Soft (Preferred order)</option>
+          </select>
+          <button type="button" class="crono-btn crono-btn-secondary" @click=${this._addDependency}>Add</button>
+        </div>
+
+        <div class="logs-list">
+          ${this.task && this.task.id ? html`
             ${existingDeps.map(d => {
-              const depTask = this.allTasks.find(t => t.id === d.depends_on_id);
+              const depTask = (this.allTasks || []).find(t => t.id === d.depends_on_id);
               return html`
                 <div class="log-item">
                   <span>Depends on: ${depTask ? depTask.title : d.depends_on_id} (${d.type})</span>
@@ -968,8 +1035,28 @@ export class CronoTaskForm extends LitElement {
                 </div>
               `;
             })}
-          </div>
+          ` : html`
+            ${(this.pendingDependencies || []).map((d, idx) => {
+              const depTask = (this.allTasks || []).find(t => t.id === d.depends_on_id);
+              return html`
+                <div class="log-item">
+                  <span>Depends on: ${depTask ? depTask.title : d.depends_on_id} (${d.type})</span>
+                  <button
+                    type="button"
+                    class="crono-btn crono-btn-icon"
+                    @click=${() => {
+                      this.pendingDependencies = this.pendingDependencies.filter((_, i) => i !== idx);
+                      this.requestUpdate();
+                    }}
+                  >✕</button>
+                </div>
+              `;
+            })}
+          `}
+        </div>
 
+        <!-- Time Tracking Log (Only for existing saved tasks) -->
+        ${this.task && this.task.id ? html`
           <div class="section-divider">Time Tracking Log</div>
           <div class="row" style="align-items: center;">
             <div class="unit-pair" style="flex-shrink: 0;">

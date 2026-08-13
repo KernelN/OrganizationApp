@@ -123,10 +123,26 @@ export class CronoTagForm extends LitElement {
     super();
     this.tag = null;
     this.initialParentId = null;
+    this._resetForm(null);
+  }
+
+  reset(tag = null, initialParentId = null) {
+    this.tag = tag;
+    this.initialParentId = initialParentId;
+    if (tag && tag.id) {
+      this._loadTag(tag);
+    } else {
+      this._resetForm(initialParentId);
+    }
+    this.requestUpdate();
+  }
+
+  _resetForm(initialParentId = null) {
+    const parentTag = (initialParentId && (appState.tags || []).find(t => t.id === initialParentId)) || null;
     this.formData = {
       name: '',
-      color: '#3B82F6',
-      parent_tag_id: null,
+      color: parentTag ? parentTag.color : '#3B82F6',
+      parent_tag_id: initialParentId || null,
       deadline: '',
       start_date: '',
       needs_dedicated_timeslot: false,
@@ -139,38 +155,29 @@ export class CronoTagForm extends LitElement {
     };
   }
 
+  _loadTag(tag) {
+    this.formData = {
+      name: tag.name || '',
+      color: tag.color || '#3B82F6',
+      parent_tag_id: tag.parent_tag_id || null,
+      deadline: tag.deadline ? tag.deadline.split('T')[0] : '',
+      start_date: tag.start_date ? tag.start_date.split('T')[0] : '',
+      needs_dedicated_timeslot: tag.needs_dedicated_timeslot ?? false,
+      time_window_mode: tag.time_window_mode || 'none',
+      time_windows: tag.time_windows || {},
+      auto_expand_config: tag.auto_expand_config || {
+        minimum_daily_hours: 1.0,
+        assigned_days: [0, 1, 2, 3, 4]
+      }
+    };
+  }
+
   willUpdate(changedProperties) {
     if (changedProperties.has('tag') || changedProperties.has('initialParentId')) {
-      if (this.tag) {
-        this.formData = {
-          name: this.tag.name || '',
-          color: this.tag.color || '#3B82F6',
-          parent_tag_id: this.tag.parent_tag_id || null,
-          deadline: this.tag.deadline ? this.tag.deadline.split('T')[0] : '',
-          start_date: this.tag.start_date ? this.tag.start_date.split('T')[0] : '',
-          needs_dedicated_timeslot: this.tag.needs_dedicated_timeslot ?? false,
-          time_window_mode: this.tag.time_window_mode || 'none',
-          time_windows: this.tag.time_windows || {},
-          auto_expand_config: this.tag.auto_expand_config || {
-            minimum_daily_hours: 1.0,
-            assigned_days: [0, 1, 2, 3, 4]
-          }
-        };
+      if (this.tag && this.tag.id) {
+        this._loadTag(this.tag);
       } else {
-        this.formData = {
-          name: '',
-          color: '#3B82F6',
-          parent_tag_id: this.initialParentId || null,
-          deadline: '',
-          start_date: '',
-          needs_dedicated_timeslot: false,
-          time_window_mode: 'none',
-          time_windows: {},
-          auto_expand_config: {
-            minimum_daily_hours: 1.0,
-            assigned_days: [0, 1, 2, 3, 4]
-          }
-        };
+        this._resetForm(this.initialParentId);
       }
     }
   }
@@ -191,7 +198,7 @@ export class CronoTagForm extends LitElement {
     this.requestUpdate();
   }
 
-  _onSubmit(e) {
+  async _onSubmit(e) {
     e.preventDefault();
 
     const allTags = appState.tags || [];
@@ -217,13 +224,15 @@ export class CronoTagForm extends LitElement {
       return;
     }
 
+    let savedTag = null;
     if (this.tag && this.tag.id) {
-      appState.updateTag(this.tag.id, payload);
+      savedTag = await appState.updateTag(this.tag.id, payload);
     } else {
-      appState.createTag(payload);
+      savedTag = await appState.createTag(payload);
     }
 
-    this.dispatchEvent(new CustomEvent('crono-form-saved', { bubbles: true, composed: true }));
+    this.dispatchEvent(new CustomEvent('crono-form-saved', { detail: { tag: savedTag }, bubbles: true, composed: true }));
+    this.dispatchEvent(new CustomEvent('crono-tag-form:save', { detail: { tag: savedTag }, bubbles: true, composed: true }));
   }
 
   _getEligibleParentTags() {
@@ -290,7 +299,12 @@ export class CronoTagForm extends LitElement {
             .value=${this.formData.parent_tag_id || ''}
             @change=${(e) => {
               const pId = e.target.value || null;
-              this.formData = { ...this.formData, parent_tag_id: pId };
+              const parent = pId ? allTags.find(t => t.id === pId) : null;
+              this.formData = {
+                ...this.formData,
+                parent_tag_id: pId,
+                color: parent && (!this.tag && (!this.formData.name || this.formData.color === '#3B82F6')) ? parent.color : this.formData.color
+              };
               this.requestUpdate();
             }}
           >
@@ -362,7 +376,10 @@ export class CronoTagForm extends LitElement {
                 name="time_window_mode"
                 value="none"
                 .checked=${this.formData.time_window_mode === 'none'}
-                @change=${() => (this.formData = { ...this.formData, time_window_mode: 'none' })}
+                @change=${() => {
+                  this.formData = { ...this.formData, time_window_mode: 'none' };
+                  this.requestUpdate();
+                }}
               /> None (Label Only)
             </label>
             <label class="radio-option" style="${parentTag && parentTag.time_window_mode === 'auto' ? 'opacity: 0.5; cursor: not-allowed;' : ''}">
@@ -372,7 +389,10 @@ export class CronoTagForm extends LitElement {
                 value="manual"
                 .disabled=${Boolean(parentTag && parentTag.time_window_mode === 'auto')}
                 .checked=${this.formData.time_window_mode === 'manual'}
-                @change=${() => (this.formData = { ...this.formData, time_window_mode: 'manual' })}
+                @change=${() => {
+                  this.formData = { ...this.formData, time_window_mode: 'manual' };
+                  this.requestUpdate();
+                }}
               /> Manual Windows
               ${parentTag && parentTag.time_window_mode === 'auto' ? html`<span style="font-size: 10px; color: var(--text-muted);">(Parent is Auto)</span>` : ''}
             </label>
@@ -382,7 +402,10 @@ export class CronoTagForm extends LitElement {
                 name="time_window_mode"
                 value="auto"
                 .checked=${this.formData.time_window_mode === 'auto'}
-                @change=${() => (this.formData = { ...this.formData, time_window_mode: 'auto' })}
+                @change=${() => {
+                  this.formData = { ...this.formData, time_window_mode: 'auto' };
+                  this.requestUpdate();
+                }}
               /> Auto-Expanding
             </label>
           </div>

@@ -112,6 +112,10 @@ export class CronoCalendarView extends LitElement {
     if (task && task.id) {
       this.editingTask = task;
       this.taskDrawerOpen = true;
+      const form = this.shadowRoot?.querySelector('crono-task-form');
+      if (form && typeof form.reset === 'function') {
+        form.reset(task);
+      }
     }
   }
 
@@ -120,6 +124,10 @@ export class CronoCalendarView extends LitElement {
     if (tag && tag.id) {
       this.editingTag = tag;
       this.tagDrawerOpen = true;
+      const form = this.shadowRoot?.querySelector('crono-tag-form');
+      if (form && typeof form.reset === 'function') {
+        form.reset(tag, null);
+      }
     }
   }
 
@@ -212,6 +220,9 @@ export class CronoCalendarView extends LitElement {
       >
         <crono-task-form
           .task=${this.editingTask}
+          .tags=${tags}
+          .allTasks=${tasks}
+          @crono-form-saved=${() => (this.taskDrawerOpen = false)}
           @crono-task-form:cancel=${() => (this.taskDrawerOpen = false)}
           @crono-task-form:save=${() => (this.taskDrawerOpen = false)}
           @crono-task-form:delete=${() => (this.taskDrawerOpen = false)}
@@ -226,6 +237,7 @@ export class CronoCalendarView extends LitElement {
       >
         <crono-tag-form
           .tag=${this.editingTag}
+          @crono-form-saved=${() => (this.tagDrawerOpen = false)}
           @crono-tag-form:cancel=${() => (this.tagDrawerOpen = false)}
           @crono-tag-form:save=${() => (this.tagDrawerOpen = false)}
           @crono-tag-form:delete=${() => (this.tagDrawerOpen = false)}

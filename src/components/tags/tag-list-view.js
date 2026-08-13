@@ -134,12 +134,20 @@ export class CronoTagListView extends LitElement {
     this.editingTag = null;
     this.initialParentId = parentId;
     this.drawerOpen = true;
+    const form = this.shadowRoot?.querySelector('crono-tag-form');
+    if (form && typeof form.reset === 'function') {
+      form.reset(null, parentId);
+    }
   }
 
   _openEdit(tag) {
     this.editingTag = tag;
     this.initialParentId = null;
     this.drawerOpen = true;
+    const form = this.shadowRoot?.querySelector('crono-tag-form');
+    if (form && typeof form.reset === 'function') {
+      form.reset(tag, null);
+    }
   }
 
   _deleteTag(e, tag) {
