@@ -4,6 +4,7 @@ import { appState } from '../../state/app-state.js';
 import { getTagDepth, getTagDescendants, validateTagHierarchy } from '../../utils/validators.js';
 import { subtractTimeWindows } from '../../engine/tag-window-expander.js';
 import '../shared/color-picker.js';
+import '../shared/date-picker.js';
 import './tag-time-window-editor.js';
 
 const DAYS_MAP = [
@@ -340,22 +341,18 @@ export class CronoTagForm extends LitElement {
         <div class="row">
           <div class="form-group">
             <label>Start Date</label>
-            <input
-              type="date"
-              class="crono-input"
+            <crono-date-picker
               .value=${this.formData.start_date || ''}
-              @input=${(e) => (this.formData.start_date = e.target.value)}
-            />
+              @crono-date-change=${(e) => { this.formData = { ...this.formData, start_date: e.detail.value }; this.requestUpdate(); }}
+            ></crono-date-picker>
           </div>
 
           <div class="form-group">
             <label>Deadline</label>
-            <input
-              type="date"
-              class="crono-input"
+            <crono-date-picker
               .value=${this.formData.deadline || ''}
-              @input=${(e) => (this.formData.deadline = e.target.value)}
-            />
+              @crono-date-change=${(e) => { this.formData = { ...this.formData, deadline: e.detail.value }; this.requestUpdate(); }}
+            ></crono-date-picker>
           </div>
         </div>
 

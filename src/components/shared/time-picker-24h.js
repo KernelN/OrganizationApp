@@ -58,6 +58,14 @@ export class CronoTimePicker24h extends LitElement {
         flex-direction: column;
         overflow: hidden;
       }
+      .two-col-popover.align-right {
+        left: auto;
+        right: 0;
+      }
+      .two-col-popover.align-top {
+        top: auto;
+        bottom: calc(100% + 4px);
+      }
       .popover-header {
         display: flex;
         border-bottom: 1px solid var(--border);
@@ -168,7 +176,9 @@ export class CronoTimePicker24h extends LitElement {
     stepMinutes: { type: Number },
     disabled: { type: Boolean },
     isOpen: { state: true },
-    warningMessage: { state: true }
+    warningMessage: { state: true },
+    alignRight: { state: true },
+    alignTop: { state: true }
   };
 
   constructor() {
@@ -180,6 +190,8 @@ export class CronoTimePicker24h extends LitElement {
     this.stepMinutes = 5;
     this.disabled = false;
     this.isOpen = false;
+    this.alignRight = false;
+    this.alignTop = false;
     this.warningMessage = '';
     this._warningTimer = null;
   }
@@ -365,10 +377,24 @@ export class CronoTimePicker24h extends LitElement {
     this.requestUpdate();
   }
 
+  _openPopover() {
+    if (this.disabled) return;
+    const rect = this.getBoundingClientRect();
+    const popoverWidth = 180;
+    const popoverHeight = 240;
+    this.alignRight = (rect.left + popoverWidth > window.innerWidth - 16);
+    this.alignTop = (rect.bottom + popoverHeight > window.innerHeight - 16 && rect.top > popoverHeight);
+    this.isOpen = true;
+  }
+
   _toggleOpen(e) {
     e.stopPropagation();
     if (this.disabled) return;
-    this.isOpen = !this.isOpen;
+    if (this.isOpen) {
+      this.isOpen = false;
+    } else {
+      this._openPopover();
+    }
   }
 
   render() {
@@ -377,7 +403,7 @@ export class CronoTimePicker24h extends LitElement {
     const currM = parseInt(currMStr, 10) || 0;
 
     const hours = Array.from({ length: 24 }, (_, i) => i);
-    const minutes = [0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55];
+    const minutes = [0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 59];
 
     return html`
       <div class="picker-container">
@@ -397,7 +423,7 @@ export class CronoTimePicker24h extends LitElement {
               e.target.blur();
             }
           }}
-          @click=${() => { if (!this.disabled) this.isOpen = true; }}
+          @click=${() => this._openPopover()}
         />
         <button
           type="button"
@@ -412,7 +438,7 @@ export class CronoTimePicker24h extends LitElement {
 
         ${this.isOpen ? html`
           <div class="backdrop" @click=${() => this.isOpen = false}></div>
-          <div class="two-col-popover">
+          <div class="two-col-popover ${this.alignRight ? 'align-right' : ''} ${this.alignTop ? 'align-top' : ''}">
             <div class="popover-header">
               <div>Hour</div>
               <div>Min</div>

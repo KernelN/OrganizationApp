@@ -6,6 +6,7 @@ import { appState } from '../../state/app-state.js';
 import { addHours, formatHHMM } from '../../utils/date-utils.js';
 import '../shared/color-picker.js';
 import '../shared/time-picker-24h.js';
+import '../shared/datetime-picker.js';
 
 const DAYS_MAP = [
   { idx: 0, label: 'Mon' },
@@ -726,13 +727,12 @@ export class CronoTaskForm extends LitElement {
             ` : html`
               <div class="form-group">
                 <label>Starting Date & Time</label>
-                <input
-                  type="datetime-local"
-                  class="crono-input"
+                <crono-datetime-picker
                   .value=${this.manualStart}
-                  @input=${e => { this.manualStart = e.target.value; this.requestUpdate(); }}
-                  required
-                />
+                  .defaultTime=${'09:00'}
+                  ?required=${true}
+                  @crono-datetime-change=${e => { this.manualStart = e.detail.value; this.requestUpdate(); }}
+                ></crono-datetime-picker>
               </div>
             `}
             <div class="calculated-preview">
@@ -945,12 +945,11 @@ export class CronoTaskForm extends LitElement {
         <!-- Deadline row -->
         <div class="form-group">
           <label>Deadline (Optional)</label>
-          <input
-            type="datetime-local"
-            class="crono-input"
+          <crono-datetime-picker
             .value=${this.formData.deadline}
-            @input=${(e) => (this.formData.deadline = e.target.value)}
-          />
+            .defaultTime=${'23:59'}
+            @crono-datetime-change=${e => { this.formData.deadline = e.detail.value; this.requestUpdate(); }}
+          ></crono-datetime-picker>
         </div>
 
         <!-- Alert Window on its own separate row below Deadline to avoid any cutoff -->

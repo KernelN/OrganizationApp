@@ -327,7 +327,7 @@ After any DAL write operation, `AppState` checks if it should trigger a schedule
 | Pass raw `now` timestamp to `generateTimeSlots` | Omits morning slots for today; pushes morning tasks to tomorrow | Use `parseISOToLocalDate(nowObj)` as start |
 | Generate auto tag windows without break chunking | Overlaps break windows or truncates tag hours | Call `getAvailableWorkChunks(workWindows, breakWindows)` |
 | Allow untagged tasks in empty tag windows | Violates strict tag window isolation | Filter candidate slots with `(!s.matchingTagIds || s.matchingTagIds.size === 0)` |
-| Use native browser `<input type="time">` | Inconsistent AM/PM locale behaviors and uncontrolled dropdowns | Always use `<crono-time-picker-24h>` |
+| Use native browser `<input type="time">` or `<input type="datetime-local">` | Inconsistent AM/PM locale behaviors and uncontrolled dropdowns | Always use `<crono-time-picker-24h>`, `<crono-date-picker>`, or `<crono-datetime-picker>` |
 | Rely on browser default nested list bullets (`◦`, `▪`) | Causes double-bullet rendering and misaligned indentation | Use `list-style: none` and `<span class="md-bullet-col">•</span>` |
 | Overwrite dirty Lit DOM `.value` with property binding alone | Browser keeps dirty input value if component property didn't change | Explicitly sync `inputEl.value = val` on clamp/commit |
 | Render subtag calendar labels at identical top offsets | Causes text collision with parent tag headers | Add depth vertical padding offset (`padding-top: ${(depth - 1) * 20 + 4}px`) |
@@ -346,7 +346,8 @@ After any DAL write operation, `AppState` checks if it should trigger a schedule
 
 ### Edge Cases to Remember
 
-- **Strict 24-Hour Two-Column Time Picker**: `<crono-time-picker-24h>` provides two-column selection (`Hour 00–23` and `Min 00–55`), grays out unavailable interval slices, auto-scrolls to center on open, and clamps invalid manual inputs with an animated warning tooltip bubble.
+- **Strict 24-Hour Two-Column Time Picker**: `<crono-time-picker-24h>` provides two-column selection (`Hour 00–23` and `Min 00–55` + `:59` end-of-day), grays out unavailable interval slices, auto-scrolls to center on open, and clamps invalid manual inputs with an animated warning tooltip bubble.
+- **Date & DateTime Pickers**: `<crono-date-picker>` manages pure dates with optional clear buttons; `<crono-datetime-picker>` pairs date and 24h time selection side-by-side with smart defaults (09:00 for start, 23:59 for deadline).
 - **Hierarchical Tag Model**: Subtags support up to 4 levels of depth with cycle validation. Sibling subtags under the same parent dynamically slice and reserve parent windows using `subtractTimeWindows()`.
 - **Calendar Layering & Depth Offsets**: Calendar Day and Week views render subtag windows layered with horizontal insets and depth-based vertical padding offsets (`padding-top: ${(depth - 1) * 20 + 4}px`) to prevent label collisions.
 - **Markdown Column Bullet Tracks**: Concatenated sublists (`* *`, `* * *`, `- -`) render with fixed 16px column widths (`.md-bullet-col`) and `list-style: none`, vertically aligning each bullet level.
