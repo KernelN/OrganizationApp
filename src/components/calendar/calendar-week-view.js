@@ -18,6 +18,8 @@ export class CronoCalendarWeekView extends LitElement {
         display: block;
         height: 100%;
         overflow-y: auto;
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
       }
       .week-grid {
         display: grid;
@@ -27,6 +29,13 @@ export class CronoCalendarWeekView extends LitElement {
         border: 1px solid var(--border);
         border-radius: var(--radius-lg);
         overflow: hidden;
+        min-width: 100%;
+      }
+      @media (max-width: 768px) {
+        .week-grid {
+          grid-template-columns: repeat(7, minmax(130px, 1fr));
+          min-width: calc(7 * 130px);
+        }
       }
       .day-header {
         background: var(--bg-tertiary);
@@ -174,6 +183,42 @@ export class CronoCalendarWeekView extends LitElement {
     if (this._timer) clearInterval(this._timer);
   }
 
+  firstUpdated() {
+    this._scrollToSelectedDay(false);
+  }
+
+  updated(changedProperties) {
+    if (changedProperties.has('selectedDate')) {
+      this._scrollToSelectedDay(true);
+    }
+  }
+
+  _scrollToSelectedDay(smooth = true) {
+    requestAnimationFrame(() => {
+      const todayStr = formatDateISO(this.nowDate);
+      const isViewingTodayWeek = this.getWeekDays().some(wd => wd.dateStr === todayStr);
+
+      let target = null;
+      if (isViewingTodayWeek) {
+        target = this.renderRoot.querySelector(`.day-header[data-date="${todayStr}"]`) ||
+                 this.renderRoot.querySelector('.day-header.is-today');
+      } else if (this.selectedDate) {
+        target = this.renderRoot.querySelector(`.day-header[data-date="${this.selectedDate}"]`);
+      }
+
+      if (target && this.scrollWidth > this.clientWidth) {
+        const targetLeft = target.offsetLeft;
+        const targetWidth = target.offsetWidth;
+        const containerWidth = this.clientWidth;
+        const scrollPos = targetLeft - (containerWidth / 2) + (targetWidth / 2);
+        this.scrollTo({
+          left: Math.max(0, scrollPos),
+          behavior: smooth ? 'smooth' : 'auto'
+        });
+      }
+    });
+  }
+
   _onTagClick(tag) {
     this.dispatchEvent(new CustomEvent('crono-tag-click', {
       detail: { tag },
@@ -208,7 +253,7 @@ export class CronoCalendarWeekView extends LitElement {
           (wd) => {
             const isToday = wd.dateStr === todayStr;
             return html`
-              <div class="day-header ${isToday ? 'is-today' : ''}">
+              <div class="day-header ${isToday ? 'is-today' : ''}" data-date="${wd.dateStr}">
                 <div>${wd.label}</div>
                 <div class="day-number">${wd.dayNum}</div>
                 ${isToday ? html`<div class="today-badge">Today</div>` : ''}

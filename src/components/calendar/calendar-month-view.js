@@ -17,6 +17,8 @@ export class CronoCalendarMonthView extends LitElement {
         display: block;
         height: 100%;
         overflow-y: auto;
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
       }
       .month-grid {
         display: grid;
@@ -26,6 +28,13 @@ export class CronoCalendarMonthView extends LitElement {
         border: 1px solid var(--border);
         border-radius: var(--radius-lg);
         overflow: hidden;
+        min-width: 100%;
+      }
+      @media (max-width: 768px) {
+        .month-grid {
+          grid-template-columns: repeat(7, minmax(85px, 1fr));
+          min-width: calc(7 * 85px);
+        }
       }
       .header-cell {
         background: var(--bg-tertiary);
@@ -132,6 +141,38 @@ export class CronoCalendarMonthView extends LitElement {
     this.tagWindowsComputed = [];
   }
 
+  firstUpdated() {
+    this._scrollToCurrentDay(false);
+  }
+
+  updated(changedProperties) {
+    if (changedProperties.has('selectedDate')) {
+      this._scrollToCurrentDay(true);
+    }
+  }
+
+  _scrollToCurrentDay(smooth = true) {
+    requestAnimationFrame(() => {
+      const todayStr = formatDateISO(new Date());
+      const isCurrentMonthViewing = this.selectedDate.substring(0, 7) === todayStr.substring(0, 7);
+
+      const targetCell = isCurrentMonthViewing
+        ? (this.renderRoot.querySelector('.day-cell.is-today') || this.renderRoot.querySelector(`.day-cell[data-date="${this.selectedDate}"]`))
+        : this.renderRoot.querySelector(`.day-cell[data-date="${this.selectedDate}"]`);
+
+      if (targetCell && this.scrollWidth > this.clientWidth) {
+        const targetLeft = targetCell.offsetLeft;
+        const targetWidth = targetCell.offsetWidth;
+        const containerWidth = this.clientWidth;
+        const scrollPos = targetLeft - (containerWidth / 2) + (targetWidth / 2);
+        this.scrollTo({
+          left: Math.max(0, scrollPos),
+          behavior: smooth ? 'smooth' : 'auto'
+        });
+      }
+    });
+  }
+
   getMonthDays() {
     const curr = parseISOToLocalDate(this.selectedDate);
     const year = curr.getFullYear();
@@ -179,6 +220,7 @@ export class CronoCalendarMonthView extends LitElement {
           return html`
             <div
               class="day-cell ${d.isCurrentMonth ? '' : 'other-month'} ${isToday ? 'is-today' : ''}"
+              data-date="${d.dateStr}"
               @click=${() => this.dispatchEvent(new CustomEvent('crono-date-select', { detail: { date: d.dateStr }, bubbles: true, composed: true }))}
             >
               <div class="day-num-header">
