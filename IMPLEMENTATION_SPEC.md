@@ -258,6 +258,7 @@ sequenceDiagram
   "properties": {
     "id":                     { "type": "string", "description": "ULID" },
     "name":                   { "type": "string", "minLength": 1, "maxLength": 100 },
+    "parent_tag_id":          { "type": ["string", "null"], "default": null, "description": "Optional parent tag ULID for hierarchical subtags (max depth 4, no cycles)" },
     "color":                  { "type": "string", "pattern": "^#[0-9A-Fa-f]{6}$" },
     "duration_hours":         { "type": ["number", "null"], "minimum": 0, "default": null, "description": "Auto-computed time budget from assigned active tasks" },
     "deadline":               { "type": ["string", "null"], "format": "date-time", "default": null },
@@ -555,16 +556,29 @@ FUNCTION computeSchedule(tasks, tags, dependencies, settings, now):
     lockedBlocks.push({ task_id: task.id, start, end, is_locked: true, alert_level: "none" })
 
   // ─── PHASE 2: Compute Tag Time Windows ──────────────────
-  tagWindowMap = {}  // tag_id -> Map<date_string, [{start, end}]>
-  dayCursors = {}    // date_string -> HH:MM cursor for dynamic stacking
+  tagWindowMap = {}       // tag_id -> Map<date_string, [{start, end}]>
+  globalDayCursors = {}   // date_string -> HH:MM cursor for root tags
+  subtagDayCursors = {}   // parent_tag_id -> Map<date_string, HH:MM> for subtag carving
   
-  FOR tag IN tags WHERE tag.time_window_mode != "none":
+  // Sort tags by hierarchy depth (root tags first, then subtags), prioritizing manual before auto at same depth
+  sortedTags = sort(tags, comparator: (a, b) => {
+    depthDiff = getTagDepth(a.id) - getTagDepth(b.id)
+    if (depthDiff != 0) return depthDiff
+    if (a.time_window_mode == "manual" && b.time_window_mode != "manual") return -1
+    if (a.time_window_mode != "manual" && b.time_window_mode == "manual") return 1
+    return 0
+  })
+
+  FOR tag IN sortedTags WHERE tag.time_window_mode != "none":
+    parentWindows = tag.parent_tag_id ? tagWindowMap[tag.parent_tag_id] : null
+    activeCursors = tag.parent_tag_id ? subtagDayCursors[tag.parent_tag_id] : globalDayCursors
+
     IF tag.time_window_mode == "manual":
-      // Use fixed windows per day-of-week
-      tagWindowMap[tag.id] = expandManualWindows(tag.time_windows, now, horizon)
+      // Use fixed windows clamped against parent tag windows (if subtag)
+      tagWindowMap[tag.id] = expandManualWindows(tag.time_windows, now, horizon, parentWindows)
+      updateCursors(activeCursors, tagWindowMap[tag.id])
     
     ELSE IF tag.time_window_mode == "auto":
-      // Calculate required daily allocation
       tagTasks = tasks.filter(t => t.tag_ids.includes(tag.id) AND t.status == "active" AND t.manual_schedule == null)
       totalHoursNeeded = sum(tagTasks.map(t => t.duration_hours))
       
@@ -575,7 +589,12 @@ FUNCTION computeSchedule(tasks, tags, dependencies, settings, now):
       minDailyHours = tag.auto_expand_config.minimum_daily_hours
       requiredDailyHours = max(minDailyHours, totalHoursNeeded / availableDays)
       
-      // Split global work windows into sub-chunks around breaks and stack dynamically
+      // If subtag, subtract manual windows of sibling subtags under same parent
+      effectiveParentWindows = parentWindows
+      IF tag.parent_tag_id != null AND parentWindows != null:
+        effectiveParentWindows = subtractSiblingWindows(parentWindows, tag.parent_tag_id, tag.id, tagWindowMap)
+
+      // Carve auto windows dynamically from unreserved work windows or parent window slices
       tagWindowMap[tag.id] = generateAutoWindows(
         tag.auto_expand_config.assigned_days,
         requiredDailyHours,
@@ -583,7 +602,8 @@ FUNCTION computeSchedule(tasks, tags, dependencies, settings, now):
         settings.break_windows,
         max(tag.start_date, now),
         tag.deadline ?? horizon,
-        dayCursors
+        activeCursors,
+        effectiveParentWindows
       )
 
   // ─── PHASE 3: Generate Tag Time-Slot Blocks ─────────────

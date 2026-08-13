@@ -269,6 +269,12 @@ The user picks ONE accent hex color. `src/utils/color-utils.js` decomposes it to
 8. **Break Window Work Chunking.** Auto-expanding tag windows must call `getAvailableWorkChunks(workWindows, breakWindows)` to split global work windows into sub-chunks around custom breaks, filling sub-chunks sequentially and jumping over break windows.
 9. **Untagged Task Isolation.** Untagged tasks (tasks without a time-windowed tag) are strictly restricted to non-tag hours (`(!s.matchingTagIds || s.matchingTagIds.size === 0)`), even if a tag window is empty of tasks.
 
+10. **Tag Hierarchy & Subtag Windows.** Tags support hierarchical nesting up to 4 levels via `parent_tag_id`. Subtags inherit time window constraints from parent tags:
+   - If parent is `auto`, subtags are locked to `auto` (or `none`) and active days are restricted to parent active days.
+   - If parent is `manual`, subtags can pick `manual` or `auto`, bounded by parent unreserved windows.
+   - Sibling subtags under the same parent dynamically slice and subtract their manual windows from the parent window pool using `subtractTimeWindows()`.
+   - Scheduler Phase 2 sorts tags topologically by hierarchy depth (prioritizing manual before auto at the same depth) and carves subtag auto windows cleanly from the unreserved parent slices using scoped `subtagDayCursors`.
+
 ---
 
 ## 6. DAL Interaction Patterns
@@ -321,6 +327,10 @@ After any DAL write operation, `AppState` checks if it should trigger a schedule
 | Pass raw `now` timestamp to `generateTimeSlots` | Omits morning slots for today; pushes morning tasks to tomorrow | Use `parseISOToLocalDate(nowObj)` as start |
 | Generate auto tag windows without break chunking | Overlaps break windows or truncates tag hours | Call `getAvailableWorkChunks(workWindows, breakWindows)` |
 | Allow untagged tasks in empty tag windows | Violates strict tag window isolation | Filter candidate slots with `(!s.matchingTagIds || s.matchingTagIds.size === 0)` |
+| Use native browser `<input type="time">` | Inconsistent AM/PM locale behaviors and uncontrolled dropdowns | Always use `<crono-time-picker-24h>` |
+| Rely on browser default nested list bullets (`◦`, `▪`) | Causes double-bullet rendering and misaligned indentation | Use `list-style: none` and `<span class="md-bullet-col">•</span>` |
+| Overwrite dirty Lit DOM `.value` with property binding alone | Browser keeps dirty input value if component property didn't change | Explicitly sync `inputEl.value = val` on clamp/commit |
+| Render subtag calendar labels at identical top offsets | Causes text collision with parent tag headers | Add depth vertical padding offset (`padding-top: ${(depth - 1) * 20 + 4}px`) |
 | Hard-code colors in component CSS | Breaks theming | Use `var(--token-name)` |
 | Fire events without `composed: true` | Events won't cross Shadow DOM | Always set `bubbles: true, composed: true` |
 | Put scheduling logic in a component | Violates engine isolation | All scheduling logic lives in `src/engine/` |
@@ -336,6 +346,11 @@ After any DAL write operation, `AppState` checks if it should trigger a schedule
 
 ### Edge Cases to Remember
 
+- **Strict 24-Hour Two-Column Time Picker**: `<crono-time-picker-24h>` provides two-column selection (`Hour 00–23` and `Min 00–55`), grays out unavailable interval slices, auto-scrolls to center on open, and clamps invalid manual inputs with an animated warning tooltip bubble.
+- **Hierarchical Tag Model**: Subtags support up to 4 levels of depth with cycle validation. Sibling subtags under the same parent dynamically slice and reserve parent windows using `subtractTimeWindows()`.
+- **Calendar Layering & Depth Offsets**: Calendar Day and Week views render subtag windows layered with horizontal insets and depth-based vertical padding offsets (`padding-top: ${(depth - 1) * 20 + 4}px`) to prevent label collisions.
+- **Markdown Column Bullet Tracks**: Concatenated sublists (`* *`, `* * *`, `- -`) render with fixed 16px column widths (`.md-bullet-col`) and `list-style: none`, vertically aligning each bullet level.
+- **Task Form Preview Default**: Existing tasks open directly in the **Preview** tab, and new tasks open in **Edit** mode.
 - **Manual Start-Time Only**: Manual locked tasks (one-off and recurring) take only the start time; end time is computed from duration.
 - **Automatic Tag Time Budget**: Tag duration is dynamically derived from assigned active tasks, not manually edited.
 - **Recurring task accumulation** uses a counter on the parent, NOT separate task objects. The cap is configurable per-task (`accumulation_cap`).
@@ -348,4 +363,5 @@ After any DAL write operation, `AppState` checks if it should trigger a schedule
 - **Tags with `time_window_mode: 'none'`** are pure labels — they don't affect scheduling.
 - **Dependency cycle detection** checks the combined hard+soft graph, not just one type.
 - **History pruning** runs inside `completeTask()`, not as a separate cron/timer.
+
 
