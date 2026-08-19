@@ -60,6 +60,37 @@ class AppState {
         this.sync.updateConfig(this.settings.vercel_sync);
       }
 
+      // 2b. Cross-device automatic startup sync
+      if (this.sync.isConfigured()) {
+        try {
+          const remoteMeta = await this.sync.getRemoteMetadata();
+          const localLastSync = this.settings.vercel_sync?.last_synced_at;
+
+          const isLocalFreshOrEmpty = this.tasks.length === 0 && (remoteMeta?.taskCount || 0) > 0;
+          const isRemoteNewer = remoteMeta?.synced_at && (!localLastSync || new Date(remoteMeta.synced_at) > new Date(localLastSync));
+
+          if (remoteMeta?.exists && (isLocalFreshOrEmpty || isRemoteNewer)) {
+            const pullRes = await this.sync.pull(this.dal);
+            if (pullRes?.success) {
+              this.settings = await this.dal.getSettings();
+              this.tasks = await this.dal.getTasks();
+              this.tags = await this.dal.getTags();
+              this.dependencies = await this.dal.getDependencies();
+              this.timeLogs = await this.dal.getTimeLogs();
+              applyAccentColor(this.settings.accent_color);
+
+              const updatedSync = { ...(this.settings.vercel_sync || {}), last_synced_at: remoteMeta.synced_at };
+              await this.dal.updateSettings({ vercel_sync: updatedSync });
+              this.settings = { ...this.settings, vercel_sync: updatedSync };
+
+              eventBus.emit('toast:show', { message: 'Cloud sync: latest data restored.', type: 'info' });
+            }
+          }
+        } catch (syncErr) {
+          console.warn('Startup sync check skipped:', syncErr.message);
+        }
+      }
+
       // 3. Initialize Worker
       this.initWorker();
 
@@ -121,7 +152,12 @@ class AppState {
     this.syncDebounceTimer = setTimeout(async () => {
       if (this.sync.isConfigured()) {
         try {
-          await this.sync.push(this.dal);
+          const res = await this.sync.push(this.dal);
+          if (res?.synced_at) {
+            const updatedSync = { ...(this.settings.vercel_sync || {}), last_synced_at: res.synced_at };
+            await this.dal.updateSettings({ vercel_sync: updatedSync });
+            this.settings = { ...this.settings, vercel_sync: updatedSync };
+          }
           eventBus.emit('sync:updated', { lastSync: new Date().toISOString() });
         } catch (err) {
           eventBus.emit('toast:show', { message: err.message, type: 'warning' });

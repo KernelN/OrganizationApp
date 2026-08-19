@@ -37,18 +37,52 @@ export class VercelSync {
           'Authorization': `Bearer ${this.config.sync_key}`
         }
       });
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
       if (!res.ok || !data.success) {
-        return { valid: false, error: data.error || `HTTP ${res.status} connection test failed.` };
+        return {
+          valid: false,
+          error: data.error || `HTTP ${res.status} connection test failed.`
+        };
       }
-      return { valid: true };
+      return {
+        valid: true,
+        message: data.message || 'Connected to Redis cloud successfully.',
+        provider: data.provider || 'Redis'
+      };
     } catch (err) {
       return { valid: false, error: err.message || 'Failed to connect to Vercel sync endpoint.' };
     }
   }
 
+  async getRemoteMetadata() {
+    if (!this.isConfigured()) return null;
+    try {
+      const apiUrl = this.config.api_url || '/api/sync';
+      const res = await fetch(`${apiUrl}?action=metadata`, {
+        headers: {
+          'Authorization': `Bearer ${this.config.sync_key}`
+        }
+      });
+      if (res.status === 404) {
+        return { exists: false };
+      }
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        return null;
+      }
+      return {
+        exists: true,
+        synced_at: data._synced_at,
+        taskCount: data.taskCount || 0,
+        tagCount: data.tagCount || 0
+      };
+    } catch {
+      return null;
+    }
+  }
+
   async push(dal) {
-    if (!this.isConfigured()) return;
+    if (!this.isConfigured()) return null;
     try {
       const data = await dal.exportAll();
       const sanitizedSettings = JSON.parse(JSON.stringify(data.settings || {}));
@@ -71,10 +105,15 @@ export class VercelSync {
         body: JSON.stringify(payload)
       });
 
-      const resData = await res.json();
+      const resData = await res.json().catch(() => ({}));
       if (!res.ok || !resData.success) {
         throw new SyncError(resData.error || `Push failed with HTTP ${res.status}`);
       }
+
+      return {
+        success: true,
+        synced_at: resData._synced_at || new Date().toISOString()
+      };
     } catch (err) {
       throw new SyncError(`Vercel push failed: ${err.message}`);
     }
@@ -93,14 +132,29 @@ export class VercelSync {
         }
       });
 
-      const resData = await res.json();
+      const resData = await res.json().catch(() => ({}));
       if (!res.ok || !resData.success || !resData.data) {
         throw new SyncError(resData.error || `Pull failed with HTTP ${res.status}`);
       }
 
-      await dal.importAll(resData.data);
+      let parsedData = resData.data;
+      if (typeof parsedData === 'string') {
+        try {
+          parsedData = JSON.parse(parsedData);
+        } catch {
+          // keep as is
+        }
+      }
+
+      await dal.importAll(parsedData);
+      return {
+        success: true,
+        data: parsedData,
+        synced_at: parsedData._synced_at || null
+      };
     } catch (err) {
       throw new SyncError(`Vercel pull failed: ${err.message}`);
     }
   }
 }
+
