@@ -15,24 +15,23 @@ This guide walks you through deploying **Cronograma** for free on [Vercel](https
 
 ---
 
-## ⚡ Step 2: Create & Connect Redis (Upstash / Vercel KV) Storage
+## ⚡ Step 2: Connect Redis Storage (Redis Cloud / Upstash / KV)
 
-To enable persistent cloud backup and cross-device sync:
+Cronograma connects natively to Redis via `ioredis` using your `REDIS_URL` connection string.
 
-### Option A: Upstash Redis on Vercel (Recommended)
-1. In your project dashboard on Vercel, click the **Storage** tab in the top navigation bar.
-2. Click **Create Database** $\rightarrow$ select **Upstash Redis** (or **KV**) $\rightarrow$ click **Continue**.
-3. Choose your nearest region and click **Create**.
-4. Click **Connect Project** $\rightarrow$ select your `OrganizationApp` project $\rightarrow$ select environments (**Production**, **Preview**, **Development**).
-5. Vercel automatically injects `UPSTASH_REDIS_REST_URL` & `UPSTASH_REDIS_REST_TOKEN` (or `KV_REST_API_URL` & `KV_REST_API_TOKEN`) into your serverless environment.
+### Option A: Redis Cloud (cloud.redis.io)
+1. Log in to [Redis Cloud](https://cloud.redis.io) and open your database details.
+2. Copy your **Public endpoint** connection string (e.g. `redis://default:password@your-endpoint.db.redis.io:19866`).
+3. In your **Vercel Project Dashboard** $\rightarrow$ **Settings** $\rightarrow$ **Environment Variables**, add:
+   - **Key**: `REDIS_URL`
+   - **Value**: `redis://default:password@your-endpoint.db.redis.io:19866`
+   - **Target**: Production, Preview, Development
+4. Click **Save** and trigger a redeployment (or push a commit) so Vercel applies the environment variable.
 
-### Option B: External Upstash Database
-If you already have a database on [Upstash.com](https://upstash.com):
-1. Copy your **REST URL** and **REST Token** from the Upstash Console.
-2. In Vercel Project Settings $\rightarrow$ **Environment Variables**, add:
-   - `UPSTASH_REDIS_REST_URL` = `https://...upstash.io`
-   - `UPSTASH_REDIS_REST_TOKEN` = `your_upstash_token`
-3. Redeploy your project so the serverless function receives the new environment variables.
+### Option B: Upstash Redis / Vercel KV
+If you prefer Upstash Redis on Vercel:
+1. In Vercel Project Dashboard $\rightarrow$ **Storage** $\rightarrow$ Create/Connect **Upstash Redis**.
+2. Add `REDIS_URL` pointing to your Redis URI (e.g. `rediss://default:password@...upstash.io:6379`).
 
 ---
 

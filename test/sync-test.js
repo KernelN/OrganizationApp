@@ -1,4 +1,4 @@
-import http from 'node:http';
+import net from 'node:net';
 import handler from '../api/sync.js';
 
 let passed = 0;
@@ -45,7 +45,7 @@ function createMockReqRes(options = {}) {
 }
 
 async function runTests() {
-  console.log('--- Running /api/sync Integration Tests ---');
+  console.log('--- Running /api/sync ioredis Integration Tests ---');
 
   // Test 1: Missing auth header -> 401
   {
@@ -68,10 +68,7 @@ async function runTests() {
   {
     delete process.env.VERCEL;
     delete process.env.NODE_ENV;
-    delete process.env.UPSTASH_REDIS_REST_URL;
-    delete process.env.UPSTASH_REDIS_REST_TOKEN;
-    delete process.env.KV_REST_API_URL;
-    delete process.env.KV_REST_API_TOKEN;
+    delete process.env.REDIS_URL;
 
     const { req, res } = createMockReqRes({
       method: 'GET',
@@ -127,95 +124,105 @@ async function runTests() {
   // Test 5: Production without Redis env vars -> 503 error
   {
     process.env.VERCEL = '1';
+    delete process.env.REDIS_URL;
+
     const { req, res } = createMockReqRes({
       method: 'GET',
       headers: { authorization: 'Bearer crono_prod_test_key' },
       query: { action: 'ping' }
     });
     await handler(req, res);
-    assert(res.getStatusCode() === 503, 'Returns 503 in Vercel production if Redis is not configured');
-    assert(res.getData()?.error.includes('Missing UPSTASH_REDIS_REST_URL'), 'Returns helpful error message naming missing env vars');
+    assert(res.getStatusCode() === 503, 'Returns 503 in Vercel production if REDIS_URL is missing');
+    assert(res.getData()?.error.includes('Missing REDIS_URL'), 'Returns helpful error message naming REDIS_URL');
   }
 
-  // Test 6: Upstash Redis Mock Server Integration
+  // Test 6: TCP Redis Server Integration (ioredis)
   {
-    const mockStore = new Map();
-    const mockUpstashServer = http.createServer((sReq, sRes) => {
-      let body = '';
-      sReq.on('data', chunk => { body += chunk; });
-      sReq.on('end', () => {
-        sRes.setHeader('Content-Type', 'application/json');
-        try {
-          if (body) {
-            const parsed = JSON.parse(body);
-            if (Array.isArray(parsed)) {
-              const [cmd, key, val] = parsed;
-              if (cmd === 'PING') {
-                return sRes.end(JSON.stringify({ result: 'PONG' }));
-              }
-              if (cmd === 'SET') {
-                mockStore.set(key, val);
-                return sRes.end(JSON.stringify({ result: 'OK' }));
-              }
-              if (cmd === 'GET') {
-                return sRes.end(JSON.stringify({ result: mockStore.get(key) || null }));
-              }
+    const tcpStore = new Map();
+    const mockTcpRedisServer = net.createServer((socket) => {
+      let buffer = '';
+      socket.on('data', (chunk) => {
+        buffer += chunk.toString();
+        // Respond to RESP commands
+        while (buffer.length > 0) {
+          if (buffer.startsWith('*1\r\n$4\r\nping\r\n') || buffer.startsWith('*1\r\n$4\r\nPING\r\n') || buffer.toUpperCase().includes('PING')) {
+            socket.write('+PONG\r\n');
+            buffer = '';
+            break;
+          }
+          if (buffer.toUpperCase().includes('SET')) {
+            const lines = buffer.split('\r\n');
+            // Format: *3\r\n$3\r\nSET\r\n$<len>\r\n<key>\r\n$<len>\r\n<val>\r\n
+            const key = lines[4];
+            const val = lines[6];
+            if (key && val) {
+              tcpStore.set(key, val);
+              socket.write('+OK\r\n');
+              buffer = '';
+              break;
             }
           }
-          sRes.end(JSON.stringify({ result: null }));
-        } catch (err) {
-          sRes.statusCode = 500;
-          sRes.end(JSON.stringify({ error: err.message }));
+          if (buffer.toUpperCase().includes('GET')) {
+            const lines = buffer.split('\r\n');
+            const key = lines[4];
+            if (key) {
+              const val = tcpStore.get(key);
+              if (val) {
+                socket.write(`$${Buffer.byteLength(val)}\r\n${val}\r\n`);
+              } else {
+                socket.write('$-1\r\n');
+              }
+              buffer = '';
+              break;
+            }
+          }
+          break;
         }
       });
     });
 
-    await new Promise(resolve => mockUpstashServer.listen(0, '127.0.0.1', resolve));
-    const port = mockUpstashServer.address().port;
-    const mockUrl = `http://127.0.0.1:${port}`;
-    const mockToken = 'mock_upstash_secret_token_123';
+    await new Promise(resolve => mockTcpRedisServer.listen(0, '127.0.0.1', resolve));
+    const tcpPort = mockTcpRedisServer.address().port;
 
-    // Inject UPSTASH credentials
-    process.env.UPSTASH_REDIS_REST_URL = mockUrl;
-    process.env.UPSTASH_REDIS_REST_TOKEN = mockToken;
+    process.env.REDIS_URL = `redis://127.0.0.1:${tcpPort}`;
     process.env.VERCEL = '1';
 
-    // 6a: Ping active Redis
+    // 6a: Ping TCP Redis
     const { req: pingReq, res: pingRes } = createMockReqRes({
       method: 'GET',
-      headers: { authorization: 'Bearer crono_upstash_test_key' },
+      headers: { authorization: 'Bearer crono_tcp_test_key' },
       query: { action: 'ping' }
     });
     await handler(pingReq, pingRes);
-    assert(pingRes.getStatusCode() === 200, 'Ping succeeds with Upstash Redis configured');
-    assert(pingRes.getData()?.provider === 'Redis (Online)', 'Ping confirms Redis (Online)');
+    assert(pingRes.getStatusCode() === 200, 'Ping succeeds with TCP REDIS_URL');
+    assert(pingRes.getData()?.provider.includes('Redis Cloud (Online)'), 'Provider reports Redis Cloud (Online)');
 
-    // 6b: Push to Redis
-    const upstashPayload = {
-      tasks: [{ id: '01UPSTASH1', title: 'Upstash Task' }],
-      tags: [{ id: '01TAG_U', name: 'Cloud' }],
+    // 6b: Push via TCP Redis
+    const tcpPayload = {
+      tasks: [{ id: '01TCP1', title: 'TCP Task via REDIS_URL' }],
+      tags: [{ id: '01TAG_TCP', name: 'RedisCloud' }],
       dependencies: [],
       time_logs: [],
-      settings: { accent_color: '#4F46E5' }
+      settings: { accent_color: '#6366F1' }
     };
     const { req: pushReq, res: pushRes } = createMockReqRes({
       method: 'POST',
-      headers: { authorization: 'Bearer crono_upstash_test_key' },
-      body: upstashPayload
+      headers: { authorization: 'Bearer crono_tcp_test_key' },
+      body: tcpPayload
     });
     await handler(pushReq, pushRes);
-    assert(pushRes.getStatusCode() === 200, 'Push to Upstash Redis succeeds');
+    assert(pushRes.getStatusCode() === 200, 'Push via TCP REDIS_URL succeeds');
 
-    // 6c: Pull from Redis
+    // 6c: Pull via TCP Redis
     const { req: pullReq, res: pullRes } = createMockReqRes({
       method: 'GET',
-      headers: { authorization: 'Bearer crono_upstash_test_key' }
+      headers: { authorization: 'Bearer crono_tcp_test_key' }
     });
     await handler(pullReq, pullRes);
-    assert(pullRes.getStatusCode() === 200, 'Pull from Upstash Redis succeeds');
-    assert(pullRes.getData()?.data?.tasks?.[0]?.title === 'Upstash Task', 'Retrieved task data matches pushed data');
+    assert(pullRes.getStatusCode() === 200, 'Pull via TCP REDIS_URL succeeds');
+    assert(pullRes.getData()?.data?.tasks?.[0]?.title === 'TCP Task via REDIS_URL', 'Retrieved task matches pushed TCP data');
 
-    mockUpstashServer.close();
+    mockTcpRedisServer.close();
   }
 
   console.log(`\n=== TEST SUMMARY: ${passed} Passed, ${failed} Failed ===`);

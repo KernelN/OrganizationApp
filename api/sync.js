@@ -1,9 +1,11 @@
+import Redis from 'ioredis';
+
 /**
  * Vercel Serverless Function: /api/sync
  * 
  * Handles push (POST) and pull (GET) requests for Cronograma user data.
  * Authenticates via HTTP Bearer token matching the user's secret sync_key.
- * Integrates with Upstash Redis and Vercel KV REST APIs with strict production validation.
+ * Connects natively to Redis Cloud (cloud.redis.io) / Redis TCP via ioredis.
  */
 
 // Global in-memory fallback for local development / testing without Redis
@@ -11,29 +13,39 @@ if (!globalThis._cronoSyncStore) {
   globalThis._cronoSyncStore = new Map();
 }
 
+let redisClient = null;
+
 /**
- * Resolves Redis REST API configuration from environment variables.
- * Supports Upstash Redis Integration, Vercel KV, and generic Redis REST variables.
+ * Resolves or initializes the singleton ioredis client.
  */
-function getRedisConfig() {
-  const url = (
-    process.env.UPSTASH_REDIS_REST_URL ||
-    process.env.KV_REST_API_URL ||
-    process.env.REDIS_REST_URL ||
-    process.env.KV_URL ||
+function getRedisClient() {
+  const redisUrl = (
     process.env.REDIS_URL ||
+    process.env.UPSTASH_REDIS_REST_URL ||
+    process.env.KV_URL ||
     ''
   ).trim();
 
-  const token = (
-    process.env.UPSTASH_REDIS_REST_TOKEN ||
-    process.env.KV_REST_API_TOKEN ||
-    process.env.REDIS_REST_TOKEN ||
-    process.env.KV_REST_API_READ_ONLY_TOKEN ||
-    ''
-  ).trim();
+  if (!redisUrl) return null;
 
-  return { url, token, isConfigured: Boolean(url && token) };
+  if (!redisClient) {
+    redisClient = new Redis(redisUrl, {
+      connectTimeout: 10000,
+      maxRetriesPerRequest: 3,
+      enableReadyCheck: true,
+      lazyConnect: false,
+      retryStrategy(times) {
+        if (times > 3) return null;
+        return Math.min(times * 100, 2000);
+      }
+    });
+
+    redisClient.on('error', (err) => {
+      console.error('Redis client error:', err.message);
+    });
+  }
+
+  return redisClient;
 }
 
 /**
@@ -61,81 +73,36 @@ function parseStoredValue(raw) {
 }
 
 /**
- * Executes a raw Redis REST command against Upstash or Vercel KV.
+ * Tests active Redis connectivity using PING.
  */
-async function executeRedisCommand(url, token, commandArray) {
-  const cleanUrl = url.replace(/\/+$/, '');
-  const res = await fetch(cleanUrl, {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${token}`,
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify(commandArray)
-  });
-
-  if (!res.ok) {
-    const errorText = await res.text().catch(() => '');
-    throw new Error(`Redis REST request failed [${res.status}]: ${errorText || res.statusText}`);
+async function testRedisConnection() {
+  const client = getRedisClient();
+  if (!client) {
+    return { ok: false, error: 'No REDIS_URL configured' };
   }
-
-  const json = await res.json();
-  if (json.error) {
-    throw new Error(`Redis error: ${json.error}`);
-  }
-  return json.result;
-}
-
-/**
- * Tests active Redis connectivity.
- */
-async function testRedisConnection(url, token) {
   try {
-    const result = await executeRedisCommand(url, token, ['PING']);
-    return { ok: true, result };
+    const pong = await client.ping();
+    return { ok: true, result: pong };
   } catch (err) {
-    // Fallback: try GET endpoint
-    try {
-      const cleanUrl = url.replace(/\/+$/, '');
-      const res = await fetch(`${cleanUrl}/get/__crono_ping__`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      if (res.ok) return { ok: true, result: 'PONG' };
-      return { ok: false, error: `HTTP ${res.status}: ${res.statusText}` };
-    } catch (fallbackErr) {
-      return { ok: false, error: err.message || fallbackErr.message };
-    }
+    return { ok: false, error: err.message };
   }
 }
 
 /**
- * Retrieves data from Redis or in-memory fallback.
+ * Retrieves data from Redis Cloud or in-memory fallback.
  */
 async function getFromKV(key) {
-  const { url, token, isConfigured } = getRedisConfig();
+  const client = getRedisClient();
   const isProduction = process.env.VERCEL === '1' || process.env.NODE_ENV === 'production';
 
-  if (isConfigured) {
-    try {
-      const result = await executeRedisCommand(url, token, ['GET', key]);
-      return parseStoredValue(result);
-    } catch (err) {
-      // Try path-based REST fallback
-      const cleanUrl = url.replace(/\/+$/, '');
-      const res = await fetch(`${cleanUrl}/get/${encodeURIComponent(key)}`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      if (res.ok) {
-        const json = await res.json();
-        return parseStoredValue(json.result);
-      }
-      throw err;
-    }
+  if (client) {
+    const raw = await client.get(key);
+    return parseStoredValue(raw);
   }
 
   if (isProduction) {
     throw new Error(
-      'Redis database is not configured in Vercel. Missing UPSTASH_REDIS_REST_URL / KV_REST_API_URL and token environment variables in project settings.'
+      'Redis database is not configured in Vercel. Missing REDIS_URL environment variable in project settings.'
     );
   }
 
@@ -143,36 +110,21 @@ async function getFromKV(key) {
 }
 
 /**
- * Saves data to Redis or in-memory fallback.
+ * Saves data to Redis Cloud or in-memory fallback.
  */
 async function setToKV(key, value) {
-  const { url, token, isConfigured } = getRedisConfig();
+  const client = getRedisClient();
   const isProduction = process.env.VERCEL === '1' || process.env.NODE_ENV === 'production';
   const serialized = JSON.stringify(value);
 
-  if (isConfigured) {
-    try {
-      await executeRedisCommand(url, token, ['SET', key, serialized]);
-      return true;
-    } catch (err) {
-      // Try path-based REST fallback
-      const cleanUrl = url.replace(/\/+$/, '');
-      const res = await fetch(`${cleanUrl}/set/${encodeURIComponent(key)}`, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        },
-        body: serialized
-      });
-      if (res.ok) return true;
-      throw err;
-    }
+  if (client) {
+    await client.set(key, serialized);
+    return true;
   }
 
   if (isProduction) {
     throw new Error(
-      'Redis database is not configured in Vercel. Missing UPSTASH_REDIS_REST_URL / KV_REST_API_URL and token environment variables in project settings.'
+      'Redis database is not configured in Vercel. Missing REDIS_URL environment variable in project settings.'
     );
   }
 
@@ -215,9 +167,9 @@ export default async function handler(req, res) {
 
     // Health check / ping test
     if (req.query?.action === 'ping' || req.body?.action === 'ping') {
-      const redisConfig = getRedisConfig();
-      if (redisConfig.isConfigured) {
-        const pingTest = await testRedisConnection(redisConfig.url, redisConfig.token);
+      const client = getRedisClient();
+      if (client) {
+        const pingTest = await testRedisConnection();
         if (!pingTest.ok) {
           return res.status(502).json({
             success: false,
@@ -227,16 +179,16 @@ export default async function handler(req, res) {
         }
         return res.status(200).json({
           success: true,
-          message: 'Vercel sync endpoint active and connected to Redis database.',
-          provider: 'Redis (Online)'
+          message: 'Vercel sync endpoint active and connected to Redis Cloud database.',
+          provider: 'Redis Cloud (Online)'
         });
       }
 
       if (isProduction) {
         return res.status(503).json({
           success: false,
-          error: 'Redis database is not configured in Vercel. Missing UPSTASH_REDIS_REST_URL / KV_REST_API_URL environment variables in project settings.',
-          provider: 'None (Missing Env Vars)'
+          error: 'Redis database is not configured in Vercel. Missing REDIS_URL environment variable in project settings.',
+          provider: 'None (Missing REDIS_URL)'
         });
       }
 
@@ -287,7 +239,7 @@ export default async function handler(req, res) {
 
       return res.status(200).json({
         success: true,
-        message: 'Data synced successfully to Redis.',
+        message: 'Data synced successfully to Redis Cloud.',
         _synced_at: syncTimestamp
       });
     }
