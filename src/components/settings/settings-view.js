@@ -178,6 +178,7 @@ export class CronoSettingsView extends LitElement {
   }
   async _testVercelConnection() {
     this.testResult = await appState.sync.testConnection();
+    this.requestUpdate();
   }
 
   _generateNewKey() {
@@ -198,19 +199,30 @@ export class CronoSettingsView extends LitElement {
 
   async _syncNow() {
     try {
-      await appState.sync.push(appState.dal);
-      eventBus.emit('toast:show', { message: 'Data pushed to Vercel Cloud successfully.', type: 'success' });
+      const res = await appState.sync.push(appState.dal);
+      if (res?.synced_at) {
+        const nextSync = { ...(this.settings.vercel_sync || {}), last_synced_at: res.synced_at };
+        this.settings = { ...this.settings, vercel_sync: nextSync };
+        await appState.dal.updateSettings({ vercel_sync: nextSync });
+      }
+      eventBus.emit('toast:show', { message: 'Data pushed to Redis Cloud successfully.', type: 'success' });
+      this.requestUpdate();
     } catch (err) {
-      alert(err.message);
+      eventBus.emit('toast:show', { message: `Sync failed: ${err.message}`, type: 'error' });
     }
   }
 
   async _pullNow() {
     try {
-      await appState.sync.pull(appState.dal);
-      window.location.reload();
+      const res = await appState.sync.pull(appState.dal);
+      if (res?.synced_at) {
+        const nextSync = { ...(this.settings.vercel_sync || {}), last_synced_at: res.synced_at };
+        await appState.dal.updateSettings({ vercel_sync: nextSync });
+      }
+      eventBus.emit('toast:show', { message: 'Data restored from Redis Cloud.', type: 'success' });
+      setTimeout(() => window.location.reload(), 400);
     } catch (err) {
-      alert(err.message);
+      eventBus.emit('toast:show', { message: `Pull failed: ${err.message}`, type: 'error' });
     }
   }
 
@@ -396,9 +408,17 @@ export class CronoSettingsView extends LitElement {
           <button class="crono-btn crono-btn-danger" @click=${() => this.confirmPullOpen = true}>Pull from Cloud</button>
         </div>
 
+        ${syncConfig.last_synced_at ? html`
+          <div style="font-size: 12px; color: var(--text-secondary); margin-top: 8px;">
+            🕒 Last Cloud Sync: <strong>${new Date(syncConfig.last_synced_at).toLocaleString()}</strong>
+          </div>
+        ` : ''}
+
         ${this.testResult ? html`
-          <div style="color: ${this.testResult.valid ? 'var(--success)' : 'var(--alert-red)'}; font-size: 13px; margin-top: 8px;">
-            ${this.testResult.valid ? '✅ Connection successful!' : `❌ ${this.testResult.error}`}
+          <div style="color: ${this.testResult.valid ? 'var(--success)' : 'var(--alert-red)'}; font-size: 13px; margin-top: 8px; line-height: 1.4;">
+            ${this.testResult.valid 
+              ? html`✅ ${this.testResult.message || 'Connection successful!'} ${this.testResult.provider ? html`<span style="opacity:0.8;">(${this.testResult.provider})</span>` : ''}`
+              : html`❌ ${this.testResult.error}`}
           </div>
         ` : ''}
       </div>

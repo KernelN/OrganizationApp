@@ -15,15 +15,23 @@ This guide walks you through deploying **Cronograma** for free on [Vercel](https
 
 ---
 
-## ⚡ Step 2: Create & Connect Vercel KV Storage
+## ⚡ Step 2: Connect Redis Storage (Redis Cloud / Upstash / KV)
 
-To enable automatic cloud backup and cross-device sync:
+Cronograma connects natively to Redis via `ioredis` using your `REDIS_URL` connection string.
 
-1. In your project dashboard on Vercel, click the **Storage** tab in the top navigation bar.
-2. Click **Create Database** $\rightarrow$ select **KV** (Redis key-value database) $\rightarrow$ click **Continue**.
-3. Choose your nearest region and click **Create**.
-4. In the database setup page, click **Connect Project** $\rightarrow$ select your `OrganizationApp` project.
-5. Vercel will automatically inject `KV_REST_API_URL` and `KV_REST_API_TOKEN` environment variables into your serverless function backend (`/api/sync`).
+### Option A: Redis Cloud (cloud.redis.io)
+1. Log in to [Redis Cloud](https://cloud.redis.io) and open your database details.
+2. Copy your **Public endpoint** connection string (e.g. `redis://default:password@your-endpoint.db.redis.io:19866`).
+3. In your **Vercel Project Dashboard** $\rightarrow$ **Settings** $\rightarrow$ **Environment Variables**, add:
+   - **Key**: `REDIS_URL`
+   - **Value**: `redis://default:password@your-endpoint.db.redis.io:19866`
+   - **Target**: Production, Preview, Development
+4. Click **Save** and trigger a redeployment (or push a commit) so Vercel applies the environment variable.
+
+### Option B: Upstash Redis / Vercel KV
+If you prefer Upstash Redis on Vercel:
+1. In Vercel Project Dashboard $\rightarrow$ **Storage** $\rightarrow$ Create/Connect **Upstash Redis**.
+2. Add `REDIS_URL` pointing to your Redis URI (e.g. `rediss://default:password@...upstash.io:6379`).
 
 ---
 
