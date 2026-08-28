@@ -3,6 +3,7 @@ import { sharedStyles } from '../../styles/shared-styles.js';
 import { appState, AppStateController } from '../../state/app-state.js';
 import './task-card.js';
 import './task-form.js';
+import './task-print-dialog.js';
 import '../shared/drawer-panel.js';
 
 /**
@@ -33,6 +34,11 @@ export class CronoTaskListView extends LitElement {
       .select-filter {
         width: 140px;
       }
+      .toolbar-actions {
+        display: flex;
+        align-items: center;
+        gap: var(--space-sm);
+      }
       .task-list {
         display: flex;
         flex-direction: column;
@@ -52,7 +58,8 @@ export class CronoTaskListView extends LitElement {
     selectedTagFilter: { type: String },
     sortBy: { type: String },
     drawerOpen: { type: Boolean },
-    editingTask: { type: Object }
+    editingTask: { type: Object },
+    printDialogOpen: { type: Boolean }
   };
 
   constructor() {
@@ -62,6 +69,7 @@ export class CronoTaskListView extends LitElement {
     this.sortBy = 'priority';
     this.drawerOpen = false;
     this.editingTask = null;
+    this.printDialogOpen = false;
   }
 
   _openCreateDrawer() {
@@ -121,9 +129,14 @@ export class CronoTaskListView extends LitElement {
           </select>
         </div>
 
-        <button class="crono-btn crono-btn-primary" @click=${this._openCreateDrawer}>
-          + New Task
-        </button>
+        <div class="toolbar-actions">
+          <button class="crono-btn crono-btn-secondary" @click=${() => (this.printDialogOpen = true)}>
+            🖨️ Print
+          </button>
+          <button class="crono-btn crono-btn-primary" @click=${this._openCreateDrawer}>
+            + New Task
+          </button>
+        </div>
       </div>
 
       <div class="task-list">
@@ -160,6 +173,11 @@ export class CronoTaskListView extends LitElement {
           @crono-form-saved=${() => (this.drawerOpen = false)}
         ></crono-task-form>
       </crono-drawer-panel>
+
+      <crono-task-print-dialog
+        .open=${this.printDialogOpen}
+        @crono-print-dialog:close=${() => (this.printDialogOpen = false)}
+      ></crono-task-print-dialog>
     `;
   }
 }
