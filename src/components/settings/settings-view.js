@@ -91,7 +91,9 @@ export class CronoSettingsView extends LitElement {
   static properties = {
     settings: { type: Object },
     testResult: { type: Object },
-    confirmPullOpen: { type: Boolean }
+    confirmPullOpen: { type: Boolean },
+    confirmImportOpen: { type: Boolean },
+    pendingImportData: { type: Object }
   };
 
   constructor() {
@@ -100,6 +102,8 @@ export class CronoSettingsView extends LitElement {
     this.settings = { ...appState.settings };
     this.testResult = null;
     this.confirmPullOpen = false;
+    this.confirmImportOpen = false;
+    this.pendingImportData = null;
 
     // Pomodoro Generator state
     this.pomoWorkMins = 50;
@@ -223,6 +227,88 @@ export class CronoSettingsView extends LitElement {
       setTimeout(() => window.location.reload(), 400);
     } catch (err) {
       eventBus.emit('toast:show', { message: `Pull failed: ${err.message}`, type: 'error' });
+    }
+  }
+
+  async _exportBackup() {
+    try {
+      const data = await appState.exportAllData();
+      const jsonStr = JSON.stringify(data, null, 2);
+      const blob = new Blob([jsonStr], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+
+      const d = new Date();
+      const yyyy = d.getFullYear();
+      const mm = String(d.getMonth() + 1).padStart(2, '0');
+      const dd = String(d.getDate()).padStart(2, '0');
+      const hh = String(d.getHours()).padStart(2, '0');
+      const min = String(d.getMinutes()).padStart(2, '0');
+      const filename = `cronograma-backup-${yyyy}-${mm}-${dd}-${hh}${min}.json`;
+
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+
+      eventBus.emit('toast:show', { message: 'Backup exported successfully.', type: 'success' });
+    } catch (err) {
+      eventBus.emit('toast:show', { message: `Export failed: ${err.message}`, type: 'error' });
+    }
+  }
+
+  _triggerImportFile() {
+    const fileInput = this.renderRoot.querySelector('#import-file-input');
+    if (fileInput) {
+      fileInput.value = '';
+      fileInput.click();
+    }
+  }
+
+  async _handleFileSelected(e) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    try {
+      const text = await file.text();
+      let parsed;
+      try {
+        parsed = JSON.parse(text);
+      } catch {
+        throw new Error('Invalid JSON file format.');
+      }
+
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+        throw new Error('Invalid backup format: root must be a JSON object.');
+      }
+
+      // Check that at least some known Cronograma stores or settings exist
+      const hasKnownKeys = ('tasks' in parsed) || ('tags' in parsed) || ('settings' in parsed);
+      if (!hasKnownKeys) {
+        throw new Error('Invalid backup file: missing Cronograma data tables.');
+      }
+
+      this.pendingImportData = parsed;
+      this.confirmImportOpen = true;
+      this.requestUpdate();
+    } catch (err) {
+      eventBus.emit('toast:show', { message: err.message, type: 'error' });
+    }
+  }
+
+  async _confirmImport() {
+    this.confirmImportOpen = false;
+    if (!this.pendingImportData) return;
+
+    try {
+      await appState.importAllData(this.pendingImportData);
+      this.settings = { ...appState.settings };
+      this.pendingImportData = null;
+      this.requestUpdate();
+    } catch (err) {
+      this.pendingImportData = null;
     }
   }
 
@@ -423,6 +509,34 @@ export class CronoSettingsView extends LitElement {
         ` : ''}
       </div>
 
+      <!-- Backup & Data Management (Import / Export) -->
+      <div class="section-card">
+        <h3 class="section-title">💾 Backup & Data Management</h3>
+        <p style="font-size: 13px; color: var(--text-secondary); margin: 0; line-height: 1.5;">
+          Export your entire Cronograma workspace (tasks, tags, dependencies, time logs, and settings) to a JSON file, or restore from a previous backup.
+        </p>
+
+        <input
+          type="file"
+          id="import-file-input"
+          accept=".json,application/json"
+          style="display: none;"
+          @change=${this._handleFileSelected}
+        />
+
+        <div class="row" style="margin-top: var(--space-xs);">
+          <button class="crono-btn crono-btn-secondary" @click=${this._exportBackup}>
+            ⬇️ Export Backup (.json)
+          </button>
+          <button class="crono-btn crono-btn-secondary" @click=${this._triggerImportFile}>
+            ⬆️ Import Backup (.json)
+          </button>
+        </div>
+        <span style="font-size: 11px; color: var(--text-secondary);">
+          Note: Importing a backup replaces local data in-place and does <strong>not</strong> auto-push to the cloud. You can push manually using the sync button above when ready.
+        </span>
+      </div>
+
       <crono-confirm-dialog
         .open=${this.confirmPullOpen}
         title="Restore from Vercel Cloud"
@@ -430,6 +544,15 @@ export class CronoSettingsView extends LitElement {
         confirm-text="Overwrite & Pull"
         @crono-confirm=${this._pullNow}
         @crono-cancel=${() => this.confirmPullOpen = false}
+      ></crono-confirm-dialog>
+
+      <crono-confirm-dialog
+        .open=${this.confirmImportOpen}
+        title="Restore from Backup File"
+        message="This will replace all your current tasks, tags, dependencies, time logs, and settings with data from the selected backup file. It will NOT be pushed to the cloud until you manually click Push. Are you sure?"
+        confirm-text="Overwrite & Restore"
+        @crono-confirm=${this._confirmImport}
+        @crono-cancel=${() => { this.confirmImportOpen = false; this.pendingImportData = null; }}
       ></crono-confirm-dialog>
     `;
   }

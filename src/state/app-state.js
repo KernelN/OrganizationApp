@@ -379,6 +379,94 @@ class AppState {
       throw err;
     }
   }
+
+  /* ── Bulk Import / Export Operations ── */
+  async exportAllData() {
+    try {
+      const data = await this.dal.exportAll();
+      return data;
+    } catch (err) {
+      eventBus.emit('toast:show', { message: `Export failed: ${err.message}`, type: 'error' });
+      throw err;
+    }
+  }
+
+  async importAllData(data) {
+    if (!data || typeof data !== 'object') {
+      const err = new Error('Invalid backup data format.');
+      eventBus.emit('toast:show', { message: err.message, type: 'error' });
+      throw err;
+    }
+
+    try {
+      // Clear any pending debounced sync timer so previous actions don't push
+      if (this.syncDebounceTimer) {
+        clearTimeout(this.syncDebounceTimer);
+        this.syncDebounceTimer = null;
+      }
+
+      // Persist all imported data to IndexedDB
+      await this.dal.importAll(data);
+
+      // Refresh in-memory reactive state from DAL
+      this.settings = await this.dal.getSettings();
+      this.tasks = await this.dal.getTasks();
+      this.tags = await this.dal.getTags();
+      this.dependencies = await this.dal.getDependencies();
+      this.timeLogs = await this.dal.getTimeLogs();
+
+      // Apply theme & sync configs from restored settings
+      if (this.settings.accent_color) {
+        applyAccentColor(this.settings.accent_color);
+      }
+      if (this.settings.vercel_sync) {
+        this.sync.updateConfig(this.settings.vercel_sync);
+      }
+
+      // Check missed occurrences for any active recurring tasks in imported dataset
+      const now = new Date().toISOString();
+      for (const t of this.tasks) {
+        if (t.recurrence && t.status === 'active') {
+          const { missedCount, newNextOccurrence, newAccumulatedCount } = checkMissedOccurrences(t, now);
+          if (missedCount > 0) {
+            const updated = await this.dal.updateTask(t.id, {
+              accumulated_count: newAccumulatedCount,
+              recurrence: {
+                ...t.recurrence,
+                next_occurrence: newNextOccurrence
+              }
+            });
+            const idx = this.tasks.findIndex(item => item.id === t.id);
+            if (idx !== -1) this.tasks[idx] = updated;
+          }
+        }
+      }
+
+      // Reconfigure worker timer interval if changed
+      if (this.worker && this.settings.scheduler_interval_minutes) {
+        this.worker.postMessage({
+          type: 'CONFIG',
+          payload: { interval_ms: this.settings.scheduler_interval_minutes * 60 * 1000 }
+        });
+      }
+
+      // Recompute schedule and notify UI components
+      this.triggerRecompute();
+      this.notify();
+
+      // NOTE: We deliberately do NOT call this.debounceSync() here, ensuring no auto-push
+      eventBus.emit('toast:show', {
+        message: 'Backup imported successfully. Cloud sync was not triggered.',
+        type: 'success'
+      });
+
+      return { success: true };
+    } catch (err) {
+      console.error('Import failed:', err);
+      eventBus.emit('toast:show', { message: `Import failed: ${err.message}`, type: 'error' });
+      throw err;
+    }
+  }
 }
 
 export const appState = new AppState();
