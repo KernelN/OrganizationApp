@@ -292,7 +292,7 @@ export function computeSchedule(tasks = [], tags = [], dependencies = [], settin
       return a._dep_order - b._dep_order;
     }
     if (a.priority !== b.priority) {
-      return b.priority - a.priority; // Higher priority first
+      return (b.priority ?? 0) - (a.priority ?? 0); // Higher priority first
     }
     if (a._slack !== b._slack) {
       return a._slack - b._slack; // Lower slack (more urgent) first

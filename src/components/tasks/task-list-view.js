@@ -3,7 +3,9 @@ import { sharedStyles } from '../../styles/shared-styles.js';
 import { appState, AppStateController } from '../../state/app-state.js';
 import './task-card.js';
 import './task-form.js';
+import './task-print-dialog.js';
 import '../shared/drawer-panel.js';
+import '../shared/confirm-dialog.js';
 
 /**
  * <crono-task-list-view> — Tasks list view with filters, sorting, and editing drawer.
@@ -33,6 +35,11 @@ export class CronoTaskListView extends LitElement {
       .select-filter {
         width: 140px;
       }
+      .toolbar-actions {
+        display: flex;
+        align-items: center;
+        gap: var(--space-sm);
+      }
       .task-list {
         display: flex;
         flex-direction: column;
@@ -52,7 +59,9 @@ export class CronoTaskListView extends LitElement {
     selectedTagFilter: { type: String },
     sortBy: { type: String },
     drawerOpen: { type: Boolean },
-    editingTask: { type: Object }
+    editingTask: { type: Object },
+    taskToDelete: { type: Object },
+    printDialogOpen: { type: Boolean }
   };
 
   constructor() {
@@ -62,6 +71,8 @@ export class CronoTaskListView extends LitElement {
     this.sortBy = 'priority';
     this.drawerOpen = false;
     this.editingTask = null;
+    this.taskToDelete = null;
+    this.printDialogOpen = false;
   }
 
   _openCreateDrawer() {
@@ -82,6 +93,22 @@ export class CronoTaskListView extends LitElement {
     }
   }
 
+  _confirmDeleteTask(task) {
+    this.taskToDelete = task;
+  }
+
+  async _executeDeleteTask() {
+    if (this.taskToDelete) {
+      const id = this.taskToDelete.id;
+      this.taskToDelete = null;
+      if (this.editingTask && this.editingTask.id === id) {
+        this.drawerOpen = false;
+        this.editingTask = null;
+      }
+      await appState.deleteTask(id);
+    }
+  }
+
   render() {
     let tasks = (appState.tasks || []).filter(t => t.status === 'active');
     const tags = appState.tags || [];
@@ -91,7 +118,7 @@ export class CronoTaskListView extends LitElement {
     }
 
     if (this.sortBy === 'priority') {
-      tasks.sort((a, b) => (b.priority || 0) - (a.priority || 0));
+      tasks.sort((a, b) => (b.priority ?? 0) - (a.priority ?? 0));
     } else if (this.sortBy === 'duration') {
       tasks.sort((a, b) => (a.duration_hours || 0) - (b.duration_hours || 0));
     } else if (this.sortBy === 'deadline') {
@@ -107,7 +134,7 @@ export class CronoTaskListView extends LitElement {
             @change=${(e) => (this.selectedTagFilter = e.target.value)}
           >
             <option value="">All Tags</option>
-            ${tags.map((tg) => html`<option value=${tg.id}>${tg.name}</option>`)}
+            ${tags.filter(tg => !tg.archived).map((tg) => html`<option value=${tg.id}>${tg.name}</option>`)}
           </select>
 
           <select
@@ -121,9 +148,14 @@ export class CronoTaskListView extends LitElement {
           </select>
         </div>
 
-        <button class="crono-btn crono-btn-primary" @click=${this._openCreateDrawer}>
-          + New Task
-        </button>
+        <div class="toolbar-actions">
+          <button class="crono-btn crono-btn-secondary" @click=${() => (this.printDialogOpen = true)}>
+            🖨️ Print
+          </button>
+          <button class="crono-btn crono-btn-primary" @click=${this._openCreateDrawer}>
+            + New Task
+          </button>
+        </div>
       </div>
 
       <div class="task-list">
@@ -143,6 +175,7 @@ export class CronoTaskListView extends LitElement {
                   .tags=${tags}
                   @crono-task-click=${() => this._openEditDrawer(task)}
                   @crono-task-complete=${() => appState.completeTask(task.id)}
+                  @crono-task-delete=${(e) => this._confirmDeleteTask(e.detail.task)}
                 ></crono-task-card>
               `
             )}
@@ -158,10 +191,27 @@ export class CronoTaskListView extends LitElement {
           .tags=${tags}
           .allTasks=${appState.tasks}
           @crono-form-saved=${() => (this.drawerOpen = false)}
+          @crono-task-delete=${(e) => this._confirmDeleteTask(e.detail.task)}
         ></crono-task-form>
       </crono-drawer-panel>
+
+      <crono-task-print-dialog
+        .open=${this.printDialogOpen}
+        @crono-print-dialog:close=${() => (this.printDialogOpen = false)}
+      ></crono-task-print-dialog>
+
+      <crono-confirm-dialog
+        .open=${Boolean(this.taskToDelete)}
+        .title=${'Delete Task'}
+        .message=${`Are you sure you want to permanently delete task "${this.taskToDelete?.title || ''}"? This will not keep it in history.`}
+        confirm-text="Delete"
+        cancel-text="Cancel"
+        @crono-confirm=${this._executeDeleteTask}
+        @crono-cancel=${() => (this.taskToDelete = null)}
+      ></crono-confirm-dialog>
     `;
   }
 }
 
 customElements.define('crono-task-list-view', CronoTaskListView);
+

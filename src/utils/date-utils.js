@@ -340,3 +340,22 @@ export function checkMissedOccurrences(task, now) {
   };
 }
 
+/**
+ * Formats duration in hours into a concise string:
+ * - If less than 1 hour (< 1h): formatted in minutes (e.g. 0.5h -> "30m", 0.75h -> "45m")
+ * - If 1 hour or more (>= 1h): formatted in hours up to 2 decimal places with trailing zeros stripped (e.g. 1.25h -> "1.25h", 1.5h -> "1.5h", 2h -> "2h")
+ * @param {number} hours 
+ * @returns {string}
+ */
+export function formatDuration(hours) {
+  if (typeof hours !== 'number' || isNaN(hours) || hours <= 0) {
+    return '0m';
+  }
+  const totalMins = Math.round(hours * 60);
+  if (totalMins < 60) {
+    return `${totalMins}m`;
+  }
+  const roundedHours = parseFloat(hours.toFixed(2));
+  return `${roundedHours}h`;
+}
+

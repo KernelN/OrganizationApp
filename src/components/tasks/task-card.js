@@ -1,6 +1,8 @@
 import { LitElement, html, css } from 'lit';
 import { sharedStyles } from '../../styles/shared-styles.js';
 import { hexToRgba } from '../../utils/color-utils.js';
+import { formatDuration } from '../../utils/date-utils.js';
+import { getTagDepth } from '../../utils/validators.js';
 import '../shared/alert-badge.js';
 
 /**
@@ -35,6 +37,12 @@ export class CronoTaskCard extends LitElement {
         align-items: center;
         gap: var(--space-md);
         overflow: hidden;
+      }
+      .color-indicators {
+        display: flex;
+        align-items: center;
+        gap: 2px;
+        flex-shrink: 0;
       }
       .color-strip {
         width: 4px;
@@ -142,13 +150,33 @@ export class CronoTaskCard extends LitElement {
     }));
   }
 
+  _onDelete(e) {
+    e.stopPropagation();
+    this.dispatchEvent(new CustomEvent('crono-task-delete', {
+      detail: { task: this.task },
+      bubbles: true,
+      composed: true
+    }));
+  }
+
   render() {
     if (!this.task) return html``;
 
-    const color = this.task.color || '#6366F1';
+    const taskColor = this.task.color || '#6366F1';
     const taskTags = (this.task.tag_ids || [])
       .map(id => this.tags.find(t => t.id === id))
       .filter(Boolean);
+
+    // Deepest tag for left indicator (or task color if untagged)
+    let tagColor = taskColor;
+    if (taskTags.length > 0) {
+      const sortedTags = [...taskTags].sort((a, b) => {
+        const depthA = getTagDepth(a.id, this.tags);
+        const depthB = getTagDepth(b.id, this.tags);
+        return depthB - depthA;
+      });
+      tagColor = sortedTags[0]?.color || taskColor;
+    }
 
     // Group into hierarchical paths or list
     const tagDisplay = taskTags.length > 0
@@ -169,7 +197,10 @@ export class CronoTaskCard extends LitElement {
           >
             ⚪
           </button>
-          <div class="color-strip" style="background-color: ${color}"></div>
+          <div class="color-indicators" title=${tagDisplay ? `Tag: ${tagDisplay}` : 'Untagged'}>
+            <div class="color-strip" style="background-color: ${tagColor}"></div>
+            <div class="color-strip" style="background-color: ${taskColor}"></div>
+          </div>
           <div class="info">
             <div class="title-row">
               <div class="title">${this.task.title}</div>
@@ -180,14 +211,14 @@ export class CronoTaskCard extends LitElement {
               ` : ''}
             </div>
             <div class="meta">
-              <span class="priority-badge">P:${this.task.priority || 0}</span>
+              <span class="priority-badge">P:${this.task.priority ?? 0}</span>
               <span class="mode-badge">${isLocked ? '🔒 Locked' : '🤖 Auto'}</span>
               ${isRecurring ? html`
                 <span class="mode-badge">
                   🔄 ${this.task.recurrence.type}${this.task.recurrence.max_repeats ? ` (${this.task.recurrence.iterations_completed || 0}/${this.task.recurrence.max_repeats})` : ''}
                 </span>
               ` : ''}
-              <span>⏱ ${this.task.duration_hours}h</span>
+              <span>⏱ ${formatDuration(this.task.duration_hours)}</span>
               ${tagDisplay ? html`<span>🏷 ${tagDisplay}</span>` : ''}
               ${this.task.deadline ? html`<span>📅 ${this.task.deadline.split('T')[0]}</span>` : ''}
             </div>
@@ -195,6 +226,14 @@ export class CronoTaskCard extends LitElement {
         </div>
         <div class="actions">
           <crono-alert-badge .level=${this.task._alert_level || 'none'}></crono-alert-badge>
+          <button
+            type="button"
+            class="crono-btn crono-btn-icon"
+            title="Delete Task"
+            @click=${this._onDelete}
+          >
+            🗑
+          </button>
         </div>
       </div>
     `;
@@ -202,3 +241,4 @@ export class CronoTaskCard extends LitElement {
 }
 
 customElements.define('crono-task-card', CronoTaskCard);
+

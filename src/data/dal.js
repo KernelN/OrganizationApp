@@ -18,7 +18,9 @@ export class DataAccessLayer {
   async getTagById(id) { throw new Error('Not implemented'); }
   async createTag(tag) { throw new Error('Not implemented'); }
   async updateTag(id, updates) { throw new Error('Not implemented'); }
-  async deleteTag(id) { throw new Error('Not implemented'); }
+  async deleteTag(id, options = {}) { throw new Error('Not implemented'); }
+  async archiveTag(id, options = {}) { throw new Error('Not implemented'); }
+  async unarchiveTag(id, options = {}) { throw new Error('Not implemented'); }
 
   /* ── Dependencies ── */
   async getDependencies() { throw new Error('Not implemented'); }

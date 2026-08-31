@@ -5,6 +5,7 @@ import { generateULID } from '../utils/ulid.js';
 import { CycleDetectedError } from '../utils/errors.js';
 import { detectCycleFromDependencies } from '../engine/dependency-resolver.js';
 import { advanceRecurrenceOccurrence } from '../utils/date-utils.js';
+import { getTagAncestors, getTagDescendants, getNearestActiveAncestor } from '../utils/validators.js';
 
 const DB_NAME = 'cronograma_db';
 const DB_VERSION = 2;
@@ -310,6 +311,8 @@ export class IndexedDBAdapter extends DataAccessLayer {
       time_window_mode: tagData.time_window_mode || 'none',
       time_windows: tagData.time_windows || {},
       auto_expand_config: tagData.auto_expand_config || null,
+      archived: tagData.archived ?? false,
+      archived_at: tagData.archived_at || null,
       created_at: now,
       updated_at: now
     };
@@ -338,36 +341,182 @@ export class IndexedDBAdapter extends DataAccessLayer {
     return updated;
   }
 
-  async deleteTag(id) {
+  async archiveTag(id, options = {}) {
     const db = await this.dbPromise;
+    const targetTag = await db.get('tags', id);
+    if (!targetTag) {
+      throw new Error(`Tag with id ${id} not found`);
+    }
+
     const allTags = await db.getAll('tags');
-    
-    // Find all descendant tag IDs to cascade delete
-    const tagsToDelete = new Set([id]);
-    const queue = [id];
-    while (queue.length > 0) {
-      const currentId = queue.shift();
-      const children = allTags.filter(t => t.parent_tag_id === currentId);
-      for (const child of children) {
-        if (!tagsToDelete.has(child.id)) {
-          tagsToDelete.add(child.id);
-          queue.push(child.id);
-        }
+    const now = new Date().toISOString();
+    const descendants = getTagDescendants(id, allTags).filter(t => !t.archived);
+
+    const toArchive = new Set([id]);
+    const toUnlink = new Map(); // subtagId -> newParentId (or null)
+
+    for (const subtag of descendants) {
+      const action = options.subtagActions?.[subtag.id] || 'archive';
+      if (action === 'archive') {
+        toArchive.add(subtag.id);
+      } else if (action === 'unlink') {
+        const nearest = getNearestActiveAncestor(subtag.id, allTags, toArchive);
+        toUnlink.set(subtag.id, nearest ? nearest.id : null);
       }
     }
 
     const tx = db.transaction(['tags', 'tasks'], 'readwrite');
     const tagStore = tx.objectStore('tags');
+
+    for (const tagId of toArchive) {
+      const tg = await tagStore.get(tagId);
+      if (tg) {
+        tg.archived = true;
+        tg.archived_at = now;
+        tg.updated_at = now;
+        await tagStore.put(tg);
+      }
+    }
+
+    for (const [subtagId, newParentId] of toUnlink.entries()) {
+      const tg = await tagStore.get(subtagId);
+      if (tg) {
+        tg.parent_tag_id = newParentId;
+        tg.updated_at = now;
+        await tagStore.put(tg);
+      }
+    }
+
+    // Remove archived tags from ACTIVE tasks only; completed tasks retain them
+    const taskStore = tx.objectStore('tasks');
+    const allTasks = await taskStore.getAll();
+    for (const task of allTasks) {
+      if (task.status === 'active' && Array.isArray(task.tag_ids) && task.tag_ids.some(tId => toArchive.has(tId))) {
+        task.tag_ids = task.tag_ids.filter(tId => !toArchive.has(tId));
+        task.updated_at = now;
+        await taskStore.put(task);
+      }
+    }
+
+    await tx.done;
+    return { archivedTagIds: Array.from(toArchive), unlinkedTagIds: Array.from(toUnlink.keys()) };
+  }
+
+  async unarchiveTag(id, options = {}) {
+    const db = await this.dbPromise;
+    const targetTag = await db.get('tags', id);
+    if (!targetTag) {
+      throw new Error(`Tag with id ${id} not found`);
+    }
+
+    const allTags = await db.getAll('tags');
+    const now = new Date().toISOString();
+    const toUnarchive = new Set([id]);
+    const toReparent = new Map(); // childId -> newParentId
+
+    if (targetTag.parent_tag_id) {
+      const ancestors = getTagAncestors(id, allTags);
+      let currentChildId = id;
+      for (const ancestor of ancestors) {
+        if (ancestor.archived) {
+          const action = options.parentActions?.[ancestor.id] || 'unarchive';
+          if (action === 'unarchive') {
+            toUnarchive.add(ancestor.id);
+            currentChildId = ancestor.id;
+          } else if (action === 'unlink') {
+            const nearest = getNearestActiveAncestor(ancestor.id, allTags);
+            toReparent.set(currentChildId, nearest ? nearest.id : null);
+            break;
+          }
+        }
+      }
+    }
+
+    const tx = db.transaction(['tags'], 'readwrite');
+    const tagStore = tx.objectStore('tags');
+
+    for (const tagId of toUnarchive) {
+      const tg = await tagStore.get(tagId);
+      if (tg) {
+        tg.archived = false;
+        tg.archived_at = null;
+        tg.updated_at = now;
+        await tagStore.put(tg);
+      }
+    }
+
+    for (const [childId, newParentId] of toReparent.entries()) {
+      const tg = await tagStore.get(childId);
+      if (tg) {
+        tg.parent_tag_id = newParentId;
+        tg.updated_at = now;
+        await tagStore.put(tg);
+      }
+    }
+
+    await tx.done;
+    return { unarchivedTagIds: Array.from(toUnarchive), reparentedTagIds: Array.from(toReparent.keys()) };
+  }
+
+  async deleteTag(id, options = {}) {
+    const db = await this.dbPromise;
+    const targetTag = await db.get('tags', id);
+    if (!targetTag) return;
+
+    const allTags = await db.getAll('tags');
+    const descendants = getTagDescendants(id, allTags);
+
+    const tagsToDelete = new Set([id]);
+    const tagsToReparent = new Map(); // subtagId -> newParentId
+
+    for (const subtag of descendants) {
+      const action = options.subtagActions?.[subtag.id] || 'delete';
+      if (action === 'unlink') {
+        const nearest = getNearestActiveAncestor(subtag.id, allTags, tagsToDelete);
+        tagsToReparent.set(subtag.id, nearest ? nearest.id : targetTag.parent_tag_id || null);
+      } else {
+        tagsToDelete.add(subtag.id);
+      }
+    }
+
+    const tx = db.transaction(['tags', 'tasks'], 'readwrite');
+    const tagStore = tx.objectStore('tags');
+
     for (const tagId of tagsToDelete) {
       await tagStore.delete(tagId);
     }
 
-    // Remove deleted tag_ids from associated tasks
+    for (const [subtagId, newParentId] of tagsToReparent.entries()) {
+      const tg = await tagStore.get(subtagId);
+      if (tg) {
+        tg.parent_tag_id = newParentId;
+        tg.updated_at = new Date().toISOString();
+        await tagStore.put(tg);
+      }
+    }
+
+    // Update tasks
     const taskStore = tx.objectStore('tasks');
     const allTasks = await taskStore.getAll();
+    const now = new Date().toISOString();
+    const taskAction = options.taskAction || 'untag';
+
     for (const task of allTasks) {
       if (Array.isArray(task.tag_ids) && task.tag_ids.some(tId => tagsToDelete.has(tId))) {
-        task.tag_ids = task.tag_ids.filter(tId => !tagsToDelete.has(tId));
+        let newTagIds = [...task.tag_ids];
+
+        if (taskAction === 'reassign_to_parent' && targetTag.parent_tag_id) {
+          // Replace target tag or any deleted subtag with target parent
+          newTagIds = newTagIds.map(tId => (tagsToDelete.has(tId) ? targetTag.parent_tag_id : tId));
+          // Deduplicate
+          newTagIds = Array.from(new Set(newTagIds));
+        } else {
+          // Untag all deleted tag IDs
+          newTagIds = newTagIds.filter(tId => !tagsToDelete.has(tId));
+        }
+
+        task.tag_ids = newTagIds;
+        task.updated_at = now;
         await taskStore.put(task);
       }
     }
