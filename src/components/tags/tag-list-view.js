@@ -2,6 +2,7 @@ import { LitElement, html, css } from 'lit';
 import { sharedStyles } from '../../styles/shared-styles.js';
 import { appState, AppStateController } from '../../state/app-state.js';
 import { getTagDepth } from '../../utils/validators.js';
+import { formatDuration } from '../../utils/date-utils.js';
 import './tag-form.js';
 import '../shared/drawer-panel.js';
 
@@ -172,7 +173,7 @@ export class CronoTagListView extends LitElement {
             <span class="level-badge">L${depth}</span>
             <span class="mode-badge">${tag.time_window_mode === 'none' ? 'Label' : tag.time_window_mode === 'manual' ? '🔒 Manual' : '🤖 Auto'}</span>
             <span class="tag-meta">
-              · ⏱ ${totalHours.toFixed(1)}h (${tagTasks.length} task${tagTasks.length === 1 ? '' : 's'})
+              · ⏱ ${formatDuration(totalHours)} (${tagTasks.length} task${tagTasks.length === 1 ? '' : 's'})
             </span>
           </div>
 

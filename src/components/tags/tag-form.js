@@ -3,6 +3,7 @@ import { sharedStyles } from '../../styles/shared-styles.js';
 import { appState } from '../../state/app-state.js';
 import { getTagDepth, getTagDescendants, validateTagHierarchy } from '../../utils/validators.js';
 import { subtractTimeWindows } from '../../engine/tag-window-expander.js';
+import { formatDuration } from '../../utils/date-utils.js';
 import '../shared/color-picker.js';
 import '../shared/date-picker.js';
 import './tag-time-window-editor.js';
@@ -360,7 +361,7 @@ export class CronoTagForm extends LitElement {
         <div class="form-group">
           <label>Time Budget (Auto-computed from Tasks)</label>
           <div class="calculated-preview">
-            📊 <strong>${autoDuration.toFixed(1)} hours</strong> total from <strong>${tagTasks.length}</strong> active task${tagTasks.length === 1 ? '' : 's'}
+            📊 <strong>${formatDuration(autoDuration)}</strong> total from <strong>${tagTasks.length}</strong> active task${tagTasks.length === 1 ? '' : 's'}
           </div>
         </div>
 

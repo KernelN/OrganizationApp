@@ -32,8 +32,8 @@ export function validateTask(task) {
   if (typeof task.duration_hours !== 'number' || task.duration_hours <= 0) {
     throw new ValidationError('Task duration_hours must be a positive number.');
   }
-  if (typeof task.priority !== 'number' || task.priority < 0) {
-    throw new ValidationError('Task priority must be a non-negative integer.');
+  if (typeof task.priority !== 'number' || task.priority < -100 || task.priority > 100) {
+    throw new ValidationError('Task priority must be an integer between -100 and 100.');
   }
   if (task.color && !isValidHexColor(task.color)) {
     throw new ValidationError('Invalid task color hex format.');

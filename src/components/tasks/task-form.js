@@ -596,6 +596,15 @@ export class CronoTaskForm extends LitElement {
     this.requestUpdate();
   }
 
+  _onDeleteTask() {
+    if (!this.task || !this.task.id) return;
+    this.dispatchEvent(new CustomEvent('crono-task-delete', {
+      detail: { task: this.task },
+      bubbles: true,
+      composed: true
+    }));
+  }
+
   render() {
     const existingDeps = this.task ? appState.dependencies.filter(d => d.task_id === this.task.id) : [];
     const taskLogs = this.task ? appState.timeLogs.filter(l => l.task_id === this.task.id) : [];
@@ -649,14 +658,14 @@ export class CronoTaskForm extends LitElement {
 
         <!-- Duration & Priority -->
         <div class="row">
-          <div class="form-group" style="flex: 0 0 110px;">
-            <label>Priority (0-10)</label>
+          <div class="form-group" style="flex: 0 0 140px;">
+            <label>Priority (-100 to 100)</label>
             <input
               type="number"
               class="crono-input crono-input-num-sm"
-              min="0"
-              max="10"
-              .value=${String(this.formData.priority)}
+              min="-100"
+              max="100"
+              .value=${String(this.formData.priority ?? 0)}
               @input=${(e) => (this.formData.priority = e.target.value)}
             />
           </div>
@@ -1099,9 +1108,20 @@ export class CronoTaskForm extends LitElement {
           </div>
         ` : ''}
 
-        <button type="submit" class="crono-btn crono-btn-primary" style="margin-top: var(--space-md);">
-          Save Task
-        </button>
+        <div style="display: flex; justify-content: space-between; align-items: center; gap: var(--space-sm); margin-top: var(--space-md);">
+          <button type="submit" class="crono-btn crono-btn-primary">
+            Save Task
+          </button>
+          ${this.task && this.task.id ? html`
+            <button
+              type="button"
+              class="crono-btn crono-btn-danger"
+              @click=${this._onDeleteTask}
+            >
+              🗑 Delete Task
+            </button>
+          ` : ''}
+        </div>
       </form>
     `;
   }
