@@ -243,6 +243,7 @@ export class CronoTagForm extends LitElement {
     const descendantIds = currentId ? new Set(getTagDescendants(currentId, allTags).map(d => d.id)) : new Set();
 
     return allTags.filter(tg => {
+      if (tg.archived && tg.id !== this.formData.parent_tag_id) return false;
       if (currentId && tg.id === currentId) return false;
       if (descendantIds.has(tg.id)) return false;
       // If tag depth is already 4, it cannot have children (depth would exceed 4)

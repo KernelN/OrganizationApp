@@ -285,15 +285,44 @@ class AppState {
     }
   }
 
-  async deleteTag(id) {
+  async deleteTag(id, options = {}) {
     try {
-      await this.dal.deleteTag(id);
+      await this.dal.deleteTag(id, options);
       this.tags = await this.dal.getTags();
       this.tasks = await this.dal.getTasks();
       this.triggerRecompute();
       this.debounceSync();
       this.notify();
-      eventBus.emit('toast:show', { message: 'Tag and any child subtags deleted.', type: 'info' });
+      eventBus.emit('toast:show', { message: 'Tag deleted.', type: 'info' });
+    } catch (err) {
+      eventBus.emit('toast:show', { message: err.message, type: 'error' });
+      throw err;
+    }
+  }
+
+  async archiveTag(id, options = {}) {
+    try {
+      await this.dal.archiveTag(id, options);
+      this.tags = await this.dal.getTags();
+      this.tasks = await this.dal.getTasks();
+      this.triggerRecompute();
+      this.debounceSync();
+      this.notify();
+      eventBus.emit('toast:show', { message: 'Tag archived.', type: 'info' });
+    } catch (err) {
+      eventBus.emit('toast:show', { message: err.message, type: 'error' });
+      throw err;
+    }
+  }
+
+  async unarchiveTag(id, options = {}) {
+    try {
+      await this.dal.unarchiveTag(id, options);
+      this.tags = await this.dal.getTags();
+      this.triggerRecompute();
+      this.debounceSync();
+      this.notify();
+      eventBus.emit('toast:show', { message: 'Tag unarchived.', type: 'success' });
     } catch (err) {
       eventBus.emit('toast:show', { message: err.message, type: 'error' });
       throw err;

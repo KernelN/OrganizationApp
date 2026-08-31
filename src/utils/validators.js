@@ -66,6 +66,23 @@ export function getTagAncestors(tagId, allTags = []) {
 }
 
 /**
+ * Returns the nearest active (non-archived) ancestor tag for a given tag ID.
+ * @param {string} tagId 
+ * @param {Array<Object>} allTags 
+ * @param {Set<string>} [excludeTagIds]
+ * @returns {Object|null}
+ */
+export function getNearestActiveAncestor(tagId, allTags = [], excludeTagIds = new Set()) {
+  const ancestors = getTagAncestors(tagId, allTags);
+  for (const ancestor of ancestors) {
+    if (!ancestor.archived && !excludeTagIds.has(ancestor.id)) {
+      return ancestor;
+    }
+  }
+  return null;
+}
+
+/**
  * Returns all descendant tag objects for a given tag ID.
  * @param {string} tagId 
  * @param {Array<Object>} allTags 

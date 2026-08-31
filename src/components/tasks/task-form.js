@@ -427,8 +427,9 @@ export class CronoTaskForm extends LitElement {
 
   _renderTagBranch(tag) {
     const isSelected = this.formData.tag_ids.includes(tag.id);
-    const children = this.tags.filter(t => t.parent_tag_id === tag.id);
-    const depth = getTagDepth(tag.id, this.tags);
+    const activeTags = (this.tags || []).filter(t => !t.archived);
+    const children = activeTags.filter(t => t.parent_tag_id === tag.id);
+    const depth = getTagDepth(tag.id, activeTags);
 
     return html`
       <div class="tag-row-branch">
@@ -604,7 +605,6 @@ export class CronoTaskForm extends LitElement {
       composed: true
     }));
   }
-
   render() {
     const existingDeps = this.task ? appState.dependencies.filter(d => d.task_id === this.task.id) : [];
     const taskLogs = this.task ? appState.timeLogs.filter(l => l.task_id === this.task.id) : [];
@@ -941,13 +941,13 @@ export class CronoTaskForm extends LitElement {
         <div class="form-group">
           <label>Tags & Subtags</label>
           <div class="tag-hierarchy-tree">
-            ${this.tags.filter(t => !t.parent_tag_id).length === 0 ? html`
-              <span style="font-size: 12px; color: var(--text-secondary); font-style: italic;">No tags created yet.</span>
-            ` : html`
-              <div class="chip-group">
-                ${this.tags.filter(t => !t.parent_tag_id).map(rootTag => this._renderTagBranch(rootTag))}
-              </div>
-            `}
+            ${(() => {
+              const activeTags = (this.tags || []).filter(t => !t.archived);
+              const rootTags = activeTags.filter(t => !t.parent_tag_id || !activeTags.some(p => p.id === t.parent_tag_id));
+              return rootTags.length === 0
+                ? html`<span style="font-size: 12px; color: var(--text-secondary); font-style: italic;">No active tags created yet.</span>`
+                : html`<div class="chip-group">${rootTags.map(rootTag => this._renderTagBranch(rootTag))}</div>`;
+            })()}
           </div>
         </div>
 

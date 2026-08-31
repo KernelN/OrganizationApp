@@ -87,6 +87,12 @@ export function validateTag(tag, allTags = []) {
   if (tag.parent_tag_id !== undefined && tag.parent_tag_id !== null && typeof tag.parent_tag_id !== 'string') {
     throw new ValidationError('Tag parent_tag_id must be a string or null.');
   }
+  if (tag.archived !== undefined && typeof tag.archived !== 'boolean') {
+    throw new ValidationError('Tag archived must be a boolean.');
+  }
+  if (tag.archived_at !== undefined && tag.archived_at !== null && typeof tag.archived_at !== 'string') {
+    throw new ValidationError('Tag archived_at must be a string or null.');
+  }
 }
 
 /**

@@ -134,7 +134,7 @@ export class CronoTaskListView extends LitElement {
             @change=${(e) => (this.selectedTagFilter = e.target.value)}
           >
             <option value="">All Tags</option>
-            ${tags.map((tg) => html`<option value=${tg.id}>${tg.name}</option>`)}
+            ${tags.filter(tg => !tg.archived).map((tg) => html`<option value=${tg.id}>${tg.name}</option>`)}
           </select>
 
           <select
