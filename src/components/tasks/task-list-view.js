@@ -184,13 +184,13 @@ export class CronoTaskListView extends LitElement {
       <crono-drawer-panel
         .open=${this.drawerOpen}
         .title=${this.editingTask ? 'Edit Task' : 'New Task'}
-        @crono-drawer:close=${() => (this.drawerOpen = false)}
+        @crono-drawer:close=${() => { this.drawerOpen = false; this.editingTask = null; }}
       >
         <crono-task-form
           .task=${this.editingTask}
           .tags=${tags}
           .allTasks=${appState.tasks}
-          @crono-form-saved=${() => (this.drawerOpen = false)}
+          @crono-form-saved=${() => { this.drawerOpen = false; this.editingTask = null; }}
           @crono-task-delete=${(e) => this._confirmDeleteTask(e.detail.task)}
         ></crono-task-form>
       </crono-drawer-panel>

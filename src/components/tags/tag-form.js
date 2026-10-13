@@ -1,4 +1,5 @@
 import { LitElement, html, css } from 'lit';
+import { live } from 'lit/directives/live.js';
 import { sharedStyles } from '../../styles/shared-styles.js';
 import { appState } from '../../state/app-state.js';
 import { getTagDepth, getTagDescendants, validateTagHierarchy } from '../../utils/validators.js';
@@ -145,6 +146,7 @@ export class CronoTagForm extends LitElement {
       name: '',
       color: parentTag ? parentTag.color : '#3B82F6',
       parent_tag_id: initialParentId || null,
+      subtag_allocation_mode: 'carve',
       deadline: '',
       start_date: '',
       needs_dedicated_timeslot: false,
@@ -162,6 +164,7 @@ export class CronoTagForm extends LitElement {
       name: tag.name || '',
       color: tag.color || '#3B82F6',
       parent_tag_id: tag.parent_tag_id || null,
+      subtag_allocation_mode: tag.subtag_allocation_mode || 'carve',
       deadline: tag.deadline ? tag.deadline.split('T')[0] : '',
       start_date: tag.start_date ? tag.start_date.split('T')[0] : '',
       needs_dedicated_timeslot: tag.needs_dedicated_timeslot ?? false,
@@ -210,6 +213,7 @@ export class CronoTagForm extends LitElement {
     const payload = {
       ...this.formData,
       parent_tag_id: this.formData.parent_tag_id || null,
+      subtag_allocation_mode: this.formData.parent_tag_id ? (this.formData.subtag_allocation_mode || 'carve') : null,
       duration_hours: autoDuration > 0 ? autoDuration : null,
       deadline: this.formData.deadline ? new Date(this.formData.deadline).toISOString() : null,
       start_date: this.formData.start_date ? new Date(this.formData.start_date).toISOString() : null
@@ -288,7 +292,7 @@ export class CronoTagForm extends LitElement {
             type="text"
             class="crono-input"
             required
-            .value=${this.formData.name}
+            .value=${live(this.formData.name)}
             @input=${(e) => (this.formData.name = e.target.value)}
             placeholder="e.g. Work, Deep Focus, Sub-Project A"
           />
@@ -443,13 +447,47 @@ export class CronoTagForm extends LitElement {
               }
 
               return html`
+                ${parentTag ? html`
+                  <div class="form-group">
+                    <label>Subtag Allocation Mode</label>
+                    <div class="radio-group">
+                      <label class="radio-option">
+                        <input
+                          type="radio"
+                          name="subtag_allocation_mode"
+                          value="carve"
+                          .checked=${(this.formData.subtag_allocation_mode || 'carve') === 'carve'}
+                          @change=${() => {
+                            this.formData = { ...this.formData, subtag_allocation_mode: 'carve' };
+                            this.requestUpdate();
+                          }}
+                        />
+                        <span>✂️ Carve from parent tag (slices into parent window)</span>
+                      </label>
+                      <label class="radio-option">
+                        <input
+                          type="radio"
+                          name="subtag_allocation_mode"
+                          value="extend"
+                          .checked=${this.formData.subtag_allocation_mode === 'extend'}
+                          @change=${() => {
+                            this.formData = { ...this.formData, subtag_allocation_mode: 'extend' };
+                            this.requestUpdate();
+                          }}
+                        />
+                        <span>➕ Extend besides parent tag (scheduled after/outside parent window)</span>
+                      </label>
+                    </div>
+                  </div>
+                ` : ''}
+
                 <div class="form-group">
                   <label>Minimum Daily Allocation (Hours)</label>
                   <input
                     type="number"
                     step="0.5"
                     class="crono-input"
-                    .value=${String(this.formData.auto_expand_config?.minimum_daily_hours || 1.0)}
+                    .value=${live(String(this.formData.auto_expand_config?.minimum_daily_hours || 1.0))}
                     @input=${e => this.formData.auto_expand_config.minimum_daily_hours = Number(e.target.value)}
                   />
                 </div>

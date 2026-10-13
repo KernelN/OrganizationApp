@@ -1,9 +1,58 @@
-import { getDayOfWeekIndex, getDayName, formatDateISO, parseHHMMToMins, diffHours, addHours } from '../utils/date-utils.js';
+import { getDayOfWeekIndex, getDayName, formatDateISO, parseISOToLocalDate, parseHHMMToMins, diffHours, addHours } from '../utils/date-utils.js';
 
-function formatMinsToHHMM(mins) {
+export function formatMinsToHHMM(mins) {
   const h = Math.floor(mins / 60);
   const m = mins % 60;
   return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+}
+
+/**
+ * Sequentially slices targetHours from available chunks, advancing state cursor.
+ * @param {Array<{start: string, end: string}>} chunks 
+ * @param {number} targetHours 
+ * @param {{chunkIndex: number, currentMins: number}} state 
+ * @returns {Array<{start: string, end: string}>} Sliced window segments
+ */
+export function sliceChunks(chunks, targetHours, state) {
+  if (!Array.isArray(chunks) || chunks.length === 0 || targetHours <= 0) return [];
+  const result = [];
+  let remaining = targetHours;
+
+  while (state.chunkIndex < chunks.length && remaining > 0.0001) {
+    const chunk = chunks[state.chunkIndex];
+    const chunkStartMins = parseHHMMToMins(chunk.start);
+    const chunkEndMins = parseHHMMToMins(chunk.end);
+    const currentStartMins = Math.max(chunkStartMins, state.currentMins);
+
+    if (currentStartMins >= chunkEndMins) {
+      state.chunkIndex++;
+      if (state.chunkIndex < chunks.length) {
+        state.currentMins = parseHHMMToMins(chunks[state.chunkIndex].start);
+      }
+      continue;
+    }
+
+    const availableInChunk = (chunkEndMins - currentStartMins) / 60;
+    const take = Math.min(remaining, availableInChunk);
+    const endMins = currentStartMins + Math.round(take * 60);
+
+    result.push({
+      start: formatMinsToHHMM(currentStartMins),
+      end: formatMinsToHHMM(endMins)
+    });
+
+    remaining -= take;
+    state.currentMins = endMins;
+
+    if (endMins >= chunkEndMins) {
+      state.chunkIndex++;
+      if (state.chunkIndex < chunks.length) {
+        state.currentMins = parseHHMMToMins(chunks[state.chunkIndex].start);
+      }
+    }
+  }
+
+  return result;
 }
 
 /**
@@ -171,18 +220,30 @@ export function expandManualWindows(timeWindows = {}, now, horizon, parentWindow
  * @param {Date|string} endDate 
  * @param {Object} dayCursors - Map of dateStr -> current start HH:MM string for dynamic stacking
  * @param {Object} [parentWindowsMap] - Optional map dateStr -> [{start, end}] to carve from
+ * @param {Object} [reservedWindowsMap] - Optional map dateStr -> [{start, end}] of fixed manual windows to subtract
  * @returns {Object} Map date_string -> [{start, end}]
  */
-export function generateAutoWindows(assignedDays = [], requiredDailyHours = 1, workWindows = {}, breakWindows = {}, startDate, endDate, dayCursors = {}, parentWindowsMap = null) {
+export function generateAutoWindows(assignedDays = [], requiredDailyHours = 1, workWindows = {}, breakWindows = {}, startDate, endDate, dayCursors = {}, parentWindowsMap = null, reservedWindowsMap = null) {
   const result = {};
-  const curr = new Date(startDate);
-  const end = new Date(endDate);
+  const curr = parseISOToLocalDate(startDate);
+  const end = parseISOToLocalDate(endDate);
 
   while (curr.getTime() <= end.getTime()) {
     const dayIdx = getDayOfWeekIndex(curr);
     if (assignedDays.includes(dayIdx)) {
       const dayName = getDayName(curr);
       const dateStr = formatDateISO(curr);
+
+      const dayHours = typeof requiredDailyHours === 'function'
+        ? requiredDailyHours(dateStr)
+        : (typeof requiredDailyHours === 'object' && requiredDailyHours !== null
+            ? (requiredDailyHours[dateStr] ?? 0)
+            : requiredDailyHours);
+
+      if (dayHours <= 0) {
+        curr.setDate(curr.getDate() + 1);
+        continue;
+      }
 
       let availableChunks = [];
       const isSubtag = Boolean(parentWindowsMap);
@@ -192,15 +253,22 @@ export function generateAutoWindows(assignedDays = [], requiredDailyHours = 1, w
         const rawWorkWindows = workWindows[dayName] || [];
         const rawBreakWindows = breakWindows[dayName] || [];
         availableChunks = getAvailableWorkChunks(rawWorkWindows, rawBreakWindows);
+        if (reservedWindowsMap && reservedWindowsMap[dateStr]) {
+          availableChunks = subtractTimeWindows(availableChunks, reservedWindowsMap[dateStr]);
+        }
       }
 
       if (availableChunks.length > 0) {
         const allocatedWindows = [];
-        let remaining = requiredDailyHours;
+        let remaining = dayHours;
 
         for (const chunk of availableChunks) {
+          if (dayCursors[dateStr] && dayCursors[dateStr] >= chunk.end) {
+            continue;
+          }
+
           let effectiveStart = chunk.start;
-          if (dayCursors[dateStr] && dayCursors[dateStr] > effectiveStart && dayCursors[dateStr] < chunk.end) {
+          if (dayCursors[dateStr] && dayCursors[dateStr] > effectiveStart) {
             effectiveStart = dayCursors[dateStr];
           }
 

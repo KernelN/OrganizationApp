@@ -19,38 +19,37 @@ export class CronoCalendarMonthView extends LitElement {
         overflow-y: auto;
         overflow-x: auto;
         -webkit-overflow-scrolling: touch;
+        box-sizing: border-box;
       }
       .month-grid {
         display: grid;
-        grid-template-columns: repeat(7, 1fr);
+        grid-template-columns: repeat(7, minmax(85px, 1fr));
+        grid-auto-rows: minmax(55px, 1fr);
+        min-height: 100%;
+        min-width: calc(7 * 85px);
         gap: 1px;
         background: var(--border);
         border: 1px solid var(--border);
         border-radius: var(--radius-lg);
         overflow: hidden;
-        min-width: 100%;
-      }
-      @media (max-width: 768px) {
-        .month-grid {
-          grid-template-columns: repeat(7, minmax(85px, 1fr));
-          min-width: calc(7 * 85px);
-        }
+        box-sizing: border-box;
       }
       .header-cell {
         background: var(--bg-tertiary);
-        padding: var(--space-sm);
+        padding: var(--space-xs);
         text-align: center;
         font-weight: 600;
         font-size: 12px;
       }
       .day-cell {
         background: var(--bg-secondary);
-        min-height: 100px;
-        padding: var(--space-xs);
+        min-height: 55px;
+        padding: 4px;
         display: flex;
         flex-direction: column;
-        gap: 4px;
+        gap: 2px;
         cursor: pointer;
+        overflow: hidden;
       }
       .day-cell:hover {
         background: var(--bg-tertiary);
@@ -68,46 +67,46 @@ export class CronoCalendarMonthView extends LitElement {
         justify-content: space-between;
       }
       .day-num {
-        font-size: 12px;
+        font-size: 11px;
         font-weight: 600;
         color: var(--text-secondary);
       }
       .today-chip {
-        font-size: 9px;
+        font-size: 8px;
         font-weight: 700;
         background: var(--accent);
         color: #ffffff;
-        padding: 1px 4px;
+        padding: 1px 3px;
         border-radius: 3px;
         text-transform: uppercase;
       }
       .month-tag-box {
         border-radius: var(--radius-sm);
         border: 1px dashed var(--border);
-        padding: 3px 4px;
+        padding: 2px 3px;
         display: flex;
         flex-direction: column;
         gap: 2px;
         box-sizing: border-box;
       }
       .month-tag-title {
-        font-size: 10px;
+        font-size: 9px;
         font-weight: 700;
         white-space: nowrap;
         overflow: hidden;
         text-overflow: ellipsis;
       }
       .month-nested-task {
-        font-size: 10px;
+        font-size: 9px;
         font-weight: 500;
-        padding: 1px 4px;
+        padding: 1px 3px;
         border-radius: 2px;
         white-space: nowrap;
         overflow: hidden;
         text-overflow: ellipsis;
         display: flex;
         align-items: center;
-        gap: 4px;
+        gap: 3px;
       }
       .task-color-dot {
         width: 6px;
@@ -182,11 +181,16 @@ export class CronoCalendarMonthView extends LitElement {
     const jsDay = firstDayOfMonth.getDay();
     const startOffset = (jsDay + 6) % 7; // Mon = 0 ... Sun = 6
 
+    const lastDayOfMonth = new Date(year, month + 1, 0);
+    const totalDaysInMonth = lastDayOfMonth.getDate();
+    const numWeeks = Math.ceil((startOffset + totalDaysInMonth) / 7);
+    const totalDays = numWeeks * 7;
+
     const startDate = new Date(firstDayOfMonth);
     startDate.setDate(startDate.getDate() - startOffset);
 
     const days = [];
-    for (let i = 0; i < 35; i++) {
+    for (let i = 0; i < totalDays; i++) {
       const d = new Date(startDate);
       d.setDate(d.getDate() + i);
       days.push({

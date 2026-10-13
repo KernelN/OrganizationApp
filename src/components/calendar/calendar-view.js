@@ -72,6 +72,12 @@ export class CronoCalendarView extends LitElement {
         display: flex;
         flex-direction: column;
       }
+      .view-container > * {
+        flex: 1;
+        min-height: 0;
+        min-width: 0;
+        height: 100%;
+      }
     `
   ];
 
@@ -216,16 +222,16 @@ export class CronoCalendarView extends LitElement {
       <crono-drawer-panel
         .open=${this.taskDrawerOpen}
         title="Edit Task"
-        @crono-drawer:close=${() => (this.taskDrawerOpen = false)}
+        @crono-drawer:close=${() => { this.taskDrawerOpen = false; this.editingTask = null; }}
       >
         <crono-task-form
           .task=${this.editingTask}
           .tags=${tags}
           .allTasks=${tasks}
-          @crono-form-saved=${() => (this.taskDrawerOpen = false)}
-          @crono-task-form:cancel=${() => (this.taskDrawerOpen = false)}
-          @crono-task-form:save=${() => (this.taskDrawerOpen = false)}
-          @crono-task-form:delete=${() => (this.taskDrawerOpen = false)}
+          @crono-form-saved=${() => { this.taskDrawerOpen = false; this.editingTask = null; }}
+          @crono-task-form:cancel=${() => { this.taskDrawerOpen = false; this.editingTask = null; }}
+          @crono-task-form:save=${() => { this.taskDrawerOpen = false; this.editingTask = null; }}
+          @crono-task-form:delete=${() => { this.taskDrawerOpen = false; this.editingTask = null; }}
         ></crono-task-form>
       </crono-drawer-panel>
 

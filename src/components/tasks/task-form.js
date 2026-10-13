@@ -1,4 +1,5 @@
 import { LitElement, html, css } from 'lit';
+import { live } from 'lit/directives/live.js';
 import { sharedStyles } from '../../styles/shared-styles.js';
 import { validateTaskTagConstraints, getTagDescendants, getTagDepth } from '../../utils/validators.js';
 import { parseMarkdown } from '../../utils/markdown.js';
@@ -315,6 +316,12 @@ export class CronoTaskForm extends LitElement {
     this.alertDays = Math.floor(alertTot / 24);
     this.alertHours = Math.round(alertTot % 24);
 
+    const now = new Date();
+    const formatDt = (d) => {
+      const pad = (n) => String(n).padStart(2, '0');
+      return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+    };
+
     this.scheduleMode = task.manual_schedule ? 'manual' : 'auto';
     if (task.manual_schedule) {
       if (task.manual_schedule.start && task.manual_schedule.start.length === 5) {
@@ -324,6 +331,9 @@ export class CronoTaskForm extends LitElement {
         this.manualStart = task.manual_schedule.start.substring(0, 16);
         this.manualTimeOfDayStart = `${String(sDate.getHours()).padStart(2, '0')}:${String(sDate.getMinutes()).padStart(2, '0')}`;
       }
+    } else {
+      this.manualStart = formatDt(now);
+      this.manualTimeOfDayStart = '09:00';
     }
 
     this.isRecurring = Boolean(task.recurrence);
@@ -341,13 +351,26 @@ export class CronoTaskForm extends LitElement {
       this.recAccumulationCap = r.accumulation_cap || 5;
       this.recCumulativeDays = Array.isArray(r.cumulative_days) ? [...r.cumulative_days] : [0, 1, 2, 3, 4];
       this.recNextOccurrence = r.next_occurrence ? r.next_occurrence.substring(0, 16) : '';
+    } else {
+      this.recType = 'weekly';
+      this.recInterval = 1;
+      this.recMaxRepeats = null;
+      this.recDaysOfWeek = [0, 2, 4];
+      this.recMonthlyMode = 'day_of_month';
+      this.recDayOfMonth = now.getDate();
+      this.recNthWeekdayNth = 1;
+      this.recNthWeekdayDay = 2;
+      this.recAccumulates = true;
+      this.recAccumulationCap = 5;
+      this.recCumulativeDays = [0, 1, 2, 3, 4];
+      this.recNextOccurrence = formatDt(now);
     }
 
     this.formData = {
       title: task.title || '',
       description: task.description || '',
       color: task.color || '#6366F1',
-      priority: task.priority || 0,
+      priority: typeof task.priority === 'number' ? task.priority : 0,
       tag_ids: Array.isArray(task.tag_ids) ? [...task.tag_ids] : [],
       deadline: task.deadline ? task.deadline.substring(0, 16) : '',
       splittable: task.splittable ?? true,
@@ -552,6 +575,7 @@ export class CronoTaskForm extends LitElement {
 
     this.dispatchEvent(new CustomEvent('crono-form-saved', { detail: { task: savedTask }, bubbles: true, composed: true }));
     this.dispatchEvent(new CustomEvent('crono-task-form:save', { detail: { task: savedTask }, bubbles: true, composed: true }));
+    this.reset(null);
   }
 
   async _addDependency() {
@@ -618,7 +642,7 @@ export class CronoTaskForm extends LitElement {
             type="text"
             class="crono-input"
             required
-            .value=${this.formData.title}
+            .value=${live(this.formData.title)}
             @input=${(e) => (this.formData.title = e.target.value)}
             placeholder="e.g., Gym Workout / Pay Rent"
           />
@@ -643,7 +667,7 @@ export class CronoTaskForm extends LitElement {
           ${this.descriptionTab === 'edit' ? html`
             <textarea
               class="crono-textarea"
-              .value=${this.formData.description}
+              .value=${live(this.formData.description)}
               @input=${(e) => (this.formData.description = e.target.value)}
               placeholder="Supports markdown: **bold**, *italic*, - list, - [ ] task, \`code\`, # heading, tables..."
             ></textarea>
@@ -665,7 +689,7 @@ export class CronoTaskForm extends LitElement {
               class="crono-input crono-input-num-sm"
               min="-100"
               max="100"
-              .value=${String(this.formData.priority ?? 0)}
+              .value=${live(String(this.formData.priority ?? 0))}
               @input=${(e) => (this.formData.priority = e.target.value)}
             />
           </div>
@@ -678,7 +702,7 @@ export class CronoTaskForm extends LitElement {
                 min="0"
                 max="999"
                 class="crono-input"
-                .value=${String(this.durationHours)}
+                .value=${live(String(this.durationHours))}
                 @input=${(e) => { this.durationHours = Number(e.target.value); this.requestUpdate(); }}
               />
               <span>hrs</span>
@@ -687,7 +711,7 @@ export class CronoTaskForm extends LitElement {
                 min="0"
                 max="59"
                 class="crono-input"
-                .value=${String(this.durationMins)}
+                .value=${live(String(this.durationMins))}
                 @input=${(e) => { this.durationMins = Number(e.target.value); this.requestUpdate(); }}
               />
               <span>mins</span>
@@ -784,7 +808,7 @@ export class CronoTaskForm extends LitElement {
                     min="1"
                     max="365"
                     class="crono-input"
-                    .value=${String(this.recInterval)}
+                    .value=${live(String(this.recInterval))}
                     @input=${e => this.recInterval = Number(e.target.value)}
                   />
                   <span>${this.recType === 'hourly' ? 'hours' : this.recType === 'daily' ? 'days' : this.recType === 'weekly' ? 'weeks' : 'months'}</span>
@@ -801,7 +825,7 @@ export class CronoTaskForm extends LitElement {
                 max="9999"
                 class="crono-input"
                 placeholder="Leave empty for infinite repeats"
-                .value=${this.recMaxRepeats ? String(this.recMaxRepeats) : ''}
+                .value=${live(this.recMaxRepeats ? String(this.recMaxRepeats) : '')}
                 @input=${e => this.recMaxRepeats = e.target.value ? Number(e.target.value) : null}
               />
             </div>
@@ -854,7 +878,7 @@ export class CronoTaskForm extends LitElement {
                     min="1"
                     max="31"
                     class="crono-input"
-                    .value=${String(this.recDayOfMonth)}
+                    .value=${live(String(this.recDayOfMonth))}
                     @input=${e => this.recDayOfMonth = Number(e.target.value)}
                   />
                 </div>
@@ -901,7 +925,7 @@ export class CronoTaskForm extends LitElement {
                     min="1"
                     max="99"
                     class="crono-input"
-                    .value=${String(this.recAccumulationCap)}
+                    .value=${live(String(this.recAccumulationCap))}
                     @input=${e => this.recAccumulationCap = Number(e.target.value)}
                   />
                 </div>
@@ -970,7 +994,7 @@ export class CronoTaskForm extends LitElement {
               min="0"
               max="999"
               class="crono-input"
-              .value=${String(this.alertDays)}
+              .value=${live(String(this.alertDays))}
               @input=${(e) => (this.alertDays = Number(e.target.value))}
             />
             <span>days</span>
@@ -979,7 +1003,7 @@ export class CronoTaskForm extends LitElement {
               min="0"
               max="23"
               class="crono-input"
-              .value=${String(this.alertHours)}
+              .value=${live(String(this.alertHours))}
               @input=${(e) => (this.alertHours = Number(e.target.value))}
             />
             <span>hrs</span>
@@ -1074,7 +1098,7 @@ export class CronoTaskForm extends LitElement {
                 max="999"
                 class="crono-input"
                 placeholder="H"
-                .value=${String(this.logHours)}
+                .value=${live(String(this.logHours))}
                 @input=${e => (this.logHours = Number(e.target.value))}
               />
               <span>h</span>
@@ -1084,7 +1108,7 @@ export class CronoTaskForm extends LitElement {
                 max="59"
                 class="crono-input"
                 placeholder="M"
-                .value=${String(this.logMins)}
+                .value=${live(String(this.logMins))}
                 @input=${e => (this.logMins = Number(e.target.value))}
               />
               <span>m</span>
@@ -1093,7 +1117,7 @@ export class CronoTaskForm extends LitElement {
               type="text"
               class="crono-input"
               placeholder="Notes..."
-              .value=${this.newLogNote}
+              .value=${live(this.newLogNote)}
               @input=${e => this.newLogNote = e.target.value}
             />
             <button type="button" class="crono-btn crono-btn-secondary" @click=${this._addTimeLog}>Log</button>

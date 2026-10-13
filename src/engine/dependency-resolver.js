@@ -103,13 +103,20 @@ export function topologicalSort(graph, tasks = []) {
  */
 export function hasHardDependency(taskA, taskB, graph) {
   if (!taskA || !taskB || !graph) return false;
+  const idA = taskA.id;
+  const idB = taskB.id;
+  const parentA = taskA.parent_task_id;
+  const parentB = taskB.parent_task_id;
+  if (idA === idB || (parentA && parentA === parentB)) return false;
+
   // A depends on B directly or indirectly?
   const visited = new Set();
-  const queue = [taskA.id];
+  const queue = [idA];
+  if (parentA) queue.push(parentA);
 
   while (queue.length > 0) {
     const current = queue.shift();
-    if (current === taskB.id) return true;
+    if (current === idB || (parentB && current === parentB)) return true;
     visited.add(current);
 
     const deps = graph.get(current) || [];

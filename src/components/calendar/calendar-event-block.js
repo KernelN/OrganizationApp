@@ -36,20 +36,20 @@ export class CronoCalendarEventBlock extends LitElement {
       .header {
         display: flex;
         align-items: center;
-        justify-content: flex-start;
+        justify-content: space-between;
         gap: 6px;
         font-weight: 600;
         line-height: 1.2;
         width: 100%;
-        overflow: hidden;
+        white-space: nowrap;
       }
       .title-with-icon {
         display: flex;
         align-items: center;
         gap: 4px;
-        overflow: hidden;
         white-space: nowrap;
-        flex-shrink: 1;
+        flex: 1;
+        min-width: 0;
       }
       .title {
         white-space: nowrap;

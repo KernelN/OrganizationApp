@@ -93,6 +93,9 @@ export function validateTag(tag, allTags = []) {
   if (tag.archived_at !== undefined && tag.archived_at !== null && typeof tag.archived_at !== 'string') {
     throw new ValidationError('Tag archived_at must be a string or null.');
   }
+  if (tag.subtag_allocation_mode !== undefined && tag.subtag_allocation_mode !== null && !['carve', 'extend'].includes(tag.subtag_allocation_mode)) {
+    throw new ValidationError('Tag subtag_allocation_mode must be "carve" or "extend".');
+  }
 }
 
 /**

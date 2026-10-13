@@ -96,9 +96,7 @@ export class CronoCalendarDayView extends LitElement {
       }
       .block-wrapper {
         position: absolute;
-        left: var(--space-sm);
-        right: var(--space-sm);
-        z-index: 2;
+        box-sizing: border-box;
       }
       .current-time-line {
         position: absolute;
@@ -167,6 +165,130 @@ export class CronoCalendarDayView extends LitElement {
     if (this._timer) clearInterval(this._timer);
   }
 
+  firstUpdated() {
+    requestAnimationFrame(() => {
+      this._scrollToTargetTime(false);
+    });
+  }
+
+  updated(changedProperties) {
+    if (changedProperties.has('selectedDate')) {
+      requestAnimationFrame(() => {
+        this._scrollToTargetTime(true);
+      });
+    }
+  }
+
+  _scrollToTargetTime(smooth = false) {
+    const doScroll = () => {
+      const todayStr = formatDateISO(new Date());
+      let targetMins = 9 * 60; // 09:00 default (540px)
+
+      if (this.selectedDate === todayStr) {
+        const now = new Date();
+        targetMins = now.getHours() * 60 + now.getMinutes();
+      } else {
+        const dayName = getDayName(this.selectedDate);
+        const dayWorkWindows = (this.settings?.work_windows && this.settings.work_windows[dayName]) || [];
+        if (dayWorkWindows.length > 0 && dayWorkWindows[0].start) {
+          const [h, m] = dayWorkWindows[0].start.split(':').map(Number);
+          if (!isNaN(h)) {
+            targetMins = h * 60 + (m || 0);
+          }
+        }
+      }
+
+      const containerHeight = this.clientHeight || 600;
+      const targetScrollTop = Math.max(0, targetMins - Math.floor(containerHeight / 2));
+
+      this.scrollTo({
+        top: targetScrollTop,
+        behavior: smooth ? 'smooth' : 'auto'
+      });
+    };
+
+    requestAnimationFrame(() => {
+      doScroll();
+      setTimeout(doScroll, 60);
+    });
+  }
+
+  _layoutBlocks(dayBlocks) {
+    if (!dayBlocks || dayBlocks.length === 0) return [];
+
+    const items = dayBlocks.map((block, index) => {
+      const s = new Date(block.start);
+      const e = new Date(block.end);
+      const startMins = s.getHours() * 60 + s.getMinutes();
+      const endMins = e.getHours() * 60 + e.getMinutes();
+      const visualEndMins = Math.max(startMins + 20, endMins);
+      return {
+        block,
+        index,
+        startMins,
+        endMins,
+        visualEndMins,
+        colIndex: 0,
+        totalCols: 1
+      };
+    });
+
+    items.sort((a, b) => {
+      if (a.startMins !== b.startMins) return a.startMins - b.startMins;
+      return b.visualEndMins - a.visualEndMins;
+    });
+
+    const clusters = [];
+    let currentCluster = [];
+    let clusterMaxEnd = -1;
+
+    for (const item of items) {
+      if (currentCluster.length === 0) {
+        currentCluster.push(item);
+        clusterMaxEnd = item.visualEndMins;
+      } else {
+        if (item.startMins < clusterMaxEnd) {
+          currentCluster.push(item);
+          clusterMaxEnd = Math.max(clusterMaxEnd, item.visualEndMins);
+        } else {
+          clusters.push(currentCluster);
+          currentCluster = [item];
+          clusterMaxEnd = item.visualEndMins;
+        }
+      }
+    }
+    if (currentCluster.length > 0) {
+      clusters.push(currentCluster);
+    }
+
+    for (const cluster of clusters) {
+      const columnEndTimes = [];
+
+      for (const item of cluster) {
+        let placed = false;
+        for (let col = 0; col < columnEndTimes.length; col++) {
+          if (columnEndTimes[col] <= item.startMins) {
+            item.colIndex = col;
+            columnEndTimes[col] = item.visualEndMins;
+            placed = true;
+            break;
+          }
+        }
+        if (!placed) {
+          item.colIndex = columnEndTimes.length;
+          columnEndTimes.push(item.visualEndMins);
+        }
+      }
+
+      const totalCols = columnEndTimes.length;
+      for (const item of cluster) {
+        item.totalCols = totalCols;
+      }
+    }
+
+    return items;
+  }
+
   _onTagClick(tag) {
     this.dispatchEvent(new CustomEvent('crono-tag-click', {
       detail: { tag },
@@ -187,6 +309,7 @@ export class CronoCalendarDayView extends LitElement {
       return bDateStr === this.selectedDate || b.start.startsWith(this.selectedDate);
     });
     const dayBlocks = mergeContiguousBlocks(rawDayBlocks);
+    const layoutItems = this._layoutBlocks(dayBlocks);
 
     // Filter tag windows for selected date
     const dayTagWindows = this.tagWindowsComputed.filter(tw => tw.date === this.selectedDate);
@@ -273,20 +396,21 @@ export class CronoCalendarDayView extends LitElement {
           })()}
 
           <!-- Render Scheduled Event Blocks -->
-          ${dayBlocks.map(block => {
-            const startDate = new Date(block.start);
-            const endDate = new Date(block.end);
-            const startMins = startDate.getHours() * 60 + startDate.getMinutes();
-            const endMins = endDate.getHours() * 60 + endDate.getMinutes();
-
-            const topPx = startMins;
-            const heightPx = Math.max(24, endMins - startMins);
+          ${layoutItems.map(item => {
+            const block = item.block;
+            const topPx = item.startMins;
+            const heightPx = Math.max(24, item.endMins - item.startMins);
+            const colWidthPct = 100 / item.totalCols;
+            const colLeftPct = item.colIndex * colWidthPct;
+            const leftStyle = `calc(${colLeftPct}% + 4px)`;
+            const widthStyle = `calc(${colWidthPct}% - 8px)`;
+            const zIndex = 10 + item.colIndex;
             const task = this.tasks.find(t => t.id === block.task_id) || { title: 'Task', color: '#6366F1' };
 
             return html`
               <div
                 class="block-wrapper"
-                style="top: ${topPx}px; height: ${heightPx}px; z-index: 10;"
+                style="top: ${topPx}px; height: ${heightPx}px; left: ${leftStyle}; width: ${widthStyle}; z-index: ${zIndex};"
               >
                 <crono-calendar-event-block
                   .block=${block}

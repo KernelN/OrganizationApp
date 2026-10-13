@@ -15,27 +15,54 @@ export class CronoCalendarWeekView extends LitElement {
     sharedStyles,
     css`
       :host {
-        display: block;
+        display: flex;
+        flex-direction: column;
+        flex: 1;
+        min-height: 0;
+        min-width: 0;
+        height: 100%;
+        overflow: hidden;
+        box-sizing: border-box;
+      }
+      .week-scroller {
+        flex: 1;
+        min-height: 0;
+        min-width: 0;
+        width: 100%;
         height: 100%;
         overflow-y: auto;
         overflow-x: auto;
         -webkit-overflow-scrolling: touch;
+        scrollbar-width: thin;
+        scrollbar-color: var(--border-hover) var(--bg-tertiary);
+        box-sizing: border-box;
+      }
+      .week-scroller::-webkit-scrollbar {
+        width: 10px;
+        height: 10px;
+      }
+      .week-scroller::-webkit-scrollbar-track {
+        background: var(--bg-tertiary);
+        border-radius: 4px;
+      }
+      .week-scroller::-webkit-scrollbar-thumb {
+        background: var(--border-hover);
+        border-radius: 4px;
+        border: 2px solid var(--bg-tertiary);
+      }
+      .week-scroller::-webkit-scrollbar-thumb:hover {
+        background: var(--accent);
       }
       .week-grid {
         display: grid;
-        grid-template-columns: repeat(7, 1fr);
+        grid-template-columns: repeat(7, minmax(190px, max-content));
+        min-width: max-content;
+        width: 100%;
         gap: 1px;
         background: var(--border);
         border: 1px solid var(--border);
         border-radius: var(--radius-lg);
-        overflow: hidden;
-        min-width: 100%;
-      }
-      @media (max-width: 768px) {
-        .week-grid {
-          grid-template-columns: repeat(7, minmax(130px, 1fr));
-          min-width: calc(7 * 130px);
-        }
+        box-sizing: border-box;
       }
       .day-header {
         background: var(--bg-tertiary);
@@ -44,7 +71,25 @@ export class CronoCalendarWeekView extends LitElement {
         font-weight: 600;
         font-size: 13px;
         border-bottom: 1px solid var(--border);
-        position: relative;
+        position: sticky;
+        top: 0;
+        z-index: 5;
+        user-select: none;
+        min-width: 190px;
+        max-width: 300px;
+        box-sizing: border-box;
+      }
+      .day-header:first-child {
+        border-top-left-radius: var(--radius-lg);
+      }
+      .day-header:nth-child(7) {
+        border-top-right-radius: var(--radius-lg);
+      }
+      .day-column:nth-last-child(7) {
+        border-bottom-left-radius: var(--radius-lg);
+      }
+      .day-column:last-child {
+        border-bottom-right-radius: var(--radius-lg);
       }
       .day-header.is-today {
         background: var(--accent-muted);
@@ -70,6 +115,9 @@ export class CronoCalendarWeekView extends LitElement {
         flex-direction: column;
         gap: var(--space-xs);
         position: relative;
+        min-width: 190px;
+        max-width: 300px;
+        box-sizing: border-box;
       }
       .day-column.is-today {
         background: hsla(var(--accent-h), var(--accent-s), var(--accent-l), 0.04);
@@ -110,6 +158,22 @@ export class CronoCalendarWeekView extends LitElement {
         justify-content: space-between;
         padding: 2px 4px;
         border-radius: var(--radius-sm);
+        gap: 6px;
+        white-space: nowrap;
+        min-width: 0;
+      }
+      .tag-window-header span:first-child {
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        flex: 1;
+        min-width: 0;
+      }
+      .tag-window-header span:last-child {
+        flex-shrink: 0;
+        font-family: var(--font-mono);
+        font-size: 10px;
+        white-space: nowrap;
       }
       .tag-window-body {
         display: flex;
@@ -195,6 +259,9 @@ export class CronoCalendarWeekView extends LitElement {
 
   _scrollToSelectedDay(smooth = true) {
     requestAnimationFrame(() => {
+      const scroller = this.renderRoot?.querySelector('.week-scroller');
+      if (!scroller) return;
+
       const todayStr = formatDateISO(this.nowDate);
       const isViewingTodayWeek = this.getWeekDays().some(wd => wd.dateStr === todayStr);
 
@@ -206,17 +273,27 @@ export class CronoCalendarWeekView extends LitElement {
         target = this.renderRoot.querySelector(`.day-header[data-date="${this.selectedDate}"]`);
       }
 
-      if (target && this.scrollWidth > this.clientWidth) {
-        const targetLeft = target.offsetLeft;
-        const targetWidth = target.offsetWidth;
-        const containerWidth = this.clientWidth;
-        const scrollPos = targetLeft - (containerWidth / 2) + (targetWidth / 2);
-        this.scrollTo({
+      if (target && scroller.scrollWidth > scroller.clientWidth) {
+        const targetRect = target.getBoundingClientRect();
+        const scrollerRect = scroller.getBoundingClientRect();
+        const currentOffset = targetRect.left - scrollerRect.left + scroller.scrollLeft;
+        const scrollPos = currentOffset - (scrollerRect.width / 2) + (targetRect.width / 2);
+        scroller.scrollTo({
           left: Math.max(0, scrollPos),
           behavior: smooth ? 'smooth' : 'auto'
         });
       }
     });
+  }
+
+  _onHeaderWheel(e) {
+    if (Math.abs(e.deltaY) > Math.abs(e.deltaX)) {
+      const scroller = this.renderRoot?.querySelector('.week-scroller');
+      if (scroller && scroller.scrollWidth > scroller.clientWidth) {
+        e.preventDefault();
+        scroller.scrollLeft += e.deltaY;
+      }
+    }
   }
 
   _onTagClick(tag) {
@@ -248,19 +325,24 @@ export class CronoCalendarWeekView extends LitElement {
     const nowHHMM = `${String(this.nowDate.getHours()).padStart(2, '0')}:${String(this.nowDate.getMinutes()).padStart(2, '0')}`;
 
     return html`
-      <div class="week-grid">
-        ${weekDays.map(
-          (wd) => {
-            const isToday = wd.dateStr === todayStr;
-            return html`
-              <div class="day-header ${isToday ? 'is-today' : ''}" data-date="${wd.dateStr}">
-                <div>${wd.label}</div>
-                <div class="day-number">${wd.dayNum}</div>
-                ${isToday ? html`<div class="today-badge">Today</div>` : ''}
-              </div>
-            `;
-          }
-        )}
+      <div class="week-scroller">
+        <div class="week-grid">
+          ${weekDays.map(
+            (wd) => {
+              const isToday = wd.dateStr === todayStr;
+              return html`
+                <div
+                  class="day-header ${isToday ? 'is-today' : ''}"
+                  data-date="${wd.dateStr}"
+                  @wheel=${this._onHeaderWheel}
+                >
+                  <div>${wd.label}</div>
+                  <div class="day-number">${wd.dayNum}</div>
+                  ${isToday ? html`<div class="today-badge">Today</div>` : ''}
+                </div>
+              `;
+            }
+          )}
         ${weekDays.map((wd) => {
           const isToday = wd.dateStr === todayStr;
           const rawDayBlocks = this.blocks.filter((b) => {
@@ -379,6 +461,7 @@ export class CronoCalendarWeekView extends LitElement {
             </div>
           `;
         })}
+        </div>
       </div>
     `;
   }
